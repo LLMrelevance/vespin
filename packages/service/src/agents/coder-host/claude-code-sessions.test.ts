@@ -43,6 +43,7 @@ import {
   setPlanStatus,
   setProviderKeyForAgents,
 } from "@repo/database/models/provider-key-store";
+import { recordedRuntimeSession } from "@repo/database/models/recorded-session";
 import { runnerLinesPast } from "@repo/database/models/runner-line-store";
 import { holdSandbox } from "@repo/database/models/sandbox-terminal-lease";
 import { setWorkspaceExperiment } from "@repo/database/models/workspace-experiment-store";
@@ -599,6 +600,11 @@ it.layer(getTestDB())("a coding agent's sessions on Claude Code", (it) => {
         assert.ok(sandbox !== undefined);
         assert.equal(sandbox.image, IMAGE);
         assert.equal(sandbox.tags.sessionId, opened.sessionId);
+        // The open claimed the conversation's record for the session it answered.
+        assert.equal(
+          yield* recordedRuntimeSession({ userId, conversationId: agent.conversationId }),
+          opened.sessionId,
+        );
         // The working folder an agent with no repository works in.
         assert.ok(
           api.runs.some((run) => run.args.join(" ").includes("mkdir -p /workspace/repository")),
@@ -1217,6 +1223,38 @@ it.layer(getTestDB())("a coding agent's sessions on Claude Code", (it) => {
               { type: "image", source: { type: "base64", media_type: "image/png", data: png } },
             ],
           ],
+        );
+      }),
+  );
+
+  it.effect(
+    "an open whose record a session minted after it already holds launches nothing and hands its message to that session",
+    () =>
+      Effect.gen(function* () {
+        vi.stubEnv("VERCEL_OIDC_TOKEN", fixtureToken());
+        const api = runnerSandboxApi();
+        const { userId, agent } = yield* openAgent;
+        const sessions = yield* sessionsFor(userId, { next: 0 }).pipe(
+          Effect.provide(services(api)),
+        );
+        yield* TestClock.adjust("1 minute");
+        const later = yield* sessions.open(message(agent, "Fix the invitations."));
+        assert.ok(later.outcome === SESSION_SEND_OUTCOME.ACCEPTED);
+
+        // An open that raced it, its session minted a moment before.
+        yield* TestClock.setTime(30_000);
+        const earlier = yield* sessions.open(message(agent, "Also the emails."));
+
+        assert.deepEqual(earlier, {
+          outcome: SESSION_SEND_OUTCOME.ACCEPTED,
+          sessionId: later.sessionId,
+        });
+        assert.equal(api.sandboxes.length, 1);
+        assert.equal(api.commands.length, 1);
+        assert.ok((yield* textsOf(api.commands[0])).flat().includes("Also the emails."));
+        assert.equal(
+          yield* recordedRuntimeSession({ userId, conversationId: agent.conversationId }),
+          later.sessionId,
         );
       }),
   );

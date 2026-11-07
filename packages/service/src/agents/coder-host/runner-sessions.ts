@@ -136,6 +136,10 @@ import {
 import { deviceAgentAwaitsUpdate } from "@repo/database/models/device-agent-store";
 import { parseKeyRing } from "@repo/database/models/provider-key-seal";
 import {
+  claimRuntimeSession,
+  recordedRuntimeSession,
+} from "@repo/database/models/recorded-session";
+import {
   ANY_LAUNCH,
   clearRunnerLines,
   queueRunnerLine,
@@ -330,9 +334,10 @@ const MINTED_AT_DIGITS = 12;
 
 /**
  * A session id the harness's prefix begins, minted at the instant given: the
- * instant in fixed-width hex, then a fresh UUID. The instant first is what
- * lets a session opened later claim the conversation's record over one that
- * ended (`claimRuntimeSession`, forward only, by the ids' order).
+ * instant in fixed-width hex, then a fresh UUID. The instant is what lets a
+ * session opened later claim the conversation's record over one that
+ * ended (`claimRuntimeSession`, forward only, by the instant each was minted in,
+ * whatever prefix either begins with).
  */
 function sessionIdOf(prefix: string, mintedAt: number): string {
   return `${prefix}${mintedAt.toString(16).padStart(MINTED_AT_DIGITS, "0")}-${randomUUID()}`;
@@ -2097,6 +2102,49 @@ export const runnerSessions = <
         } as const;
       });
 
+    /**
+     * The session the conversation's record names once it is claimed for a
+     * session now opening, before that session's first line is queued or its
+     * launch scheduled: the session itself, or the one minted after it that
+     * holds the record already, as when a Start's open and a message's race
+     * on a fresh agent; none where the conversation is gone. A claim that
+     * fails fails the open with nothing started, rather than answering failed
+     * for words a launch then takes.
+     */
+    const recordClaimed = (agent: Agent, sessionId: string) =>
+      Effect.gen(function* () {
+        const target = { userId: agent.userId, conversationId: agent.conversationId };
+        const now = yield* Clock.currentTimeMillis;
+        if (yield* claimRuntimeSession(target, sessionId, new Date(now))) return sessionId;
+        return yield* recordedRuntimeSession(target);
+      });
+
+    /**
+     * An open whose claim a later session won, its message handed to that
+     * session as a send would hand it, so one agent never runs two runners
+     * and the losing session launches nothing; failed where the conversation
+     * records no session, or the send was not taken, as a send's own failure
+     * fails the open.
+     */
+    const deferredTo = (
+      agent: Agent,
+      recorded: string | undefined,
+      message: SessionMessage<Turn>,
+      answersFirst: boolean,
+    ) =>
+      Effect.gen(function* () {
+        yield* Effect.logInfo("a native session found its record held by a later session");
+        const unavailable = {
+          outcome: SESSION_SEND_OUTCOME.FAILED,
+          status: FAILED_STATUS.UNAVAILABLE,
+        } as const;
+        if (recorded === undefined) return unavailable;
+        const sent = yield* sentTo(agent, recorded, message, answersFirst);
+        return sent.outcome === SESSION_SEND_OUTCOME.ACCEPTED
+          ? ({ outcome: SESSION_SEND_OUTCOME.ACCEPTED, sessionId: recorded } as const)
+          : unavailable;
+      });
+
     const sessions: NativeSessions<Turn> = {
       // An open answers once the plan's credential is read, so a plan refused or at its limit is
       // refused at once; the sandbox, the checkout, and the launch run past the answer of the
@@ -2113,6 +2161,10 @@ export const runnerSessions = <
             return yield* Effect.gen(function* () {
               const layout = yield* machine.layout(agent);
               const credential = yield* harness.launch(agent, layout);
+              const recorded = yield* recordClaimed(agent, sessionId);
+              if (recorded !== sessionId) {
+                return yield* deferredTo(agent, recorded, message, Option.isSome(after));
+              }
               const first = messageLine(message, layout);
               const withdrawn = layout.linesRead
                 ? Effect.ignore(withdrawRunnerLine(userId, agent.id, first.line.uuid))
