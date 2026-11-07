@@ -217,9 +217,9 @@ export function agentStatusAt(
       ? AGENT_STATUS.STARTING
       : AGENT_STATUS.FAILED;
   }
-  // A row outside the vocabulary is a write this build does not know, read as the one status that claims nothing.
-  if (!isTurnStatusWord(turn.status)) return AGENT_STATUS.FAILED;
-  const status = STATUS_OF_TURN[turn.status];
+  // A word outside the vocabulary is a state a newer service writes of a turn not yet ended, since every ending is
+  // already a word here, so it reads as running; the service's deadlines, not this reader, are what end it.
+  const status = isTurnStatusWord(turn.status) ? STATUS_OF_TURN[turn.status] : AGENT_STATUS.RUNNING;
   return status === AGENT_STATUS.RUNNING && turn.cancelRequested ? AGENT_STATUS.CANCELED : status;
 }
 
