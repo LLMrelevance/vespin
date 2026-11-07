@@ -124,6 +124,7 @@ import {
   XIcon,
 } from "@repo/ui/icons";
 import { landedMark } from "@repo/ui/landed";
+import { LazyBoundary } from "@repo/ui/lazy-boundary";
 import { PICTURE_STATE, usePicture } from "@repo/ui/picture-read";
 import {
   VIRTUAL_ROWS_ANCHOR,
@@ -135,9 +136,9 @@ import { type UseQueryResult, useMutation, useQuery } from "@tanstack/react-quer
 import {
   type ComponentProps,
   createContext,
+  lazy,
   type ReactNode,
   type RefObject,
-  Suspense,
   useCallback,
   useContext,
   useEffect,
@@ -162,7 +163,6 @@ import {
 } from "../desktop/strip-tabs.js";
 import { failureShown, pictureUnread } from "../failure-report.js";
 import { useFindOpen } from "../find-in-tab.js";
-import { lazyRoute } from "../lazy-route.js";
 import {
   pullRequestChecksQuery,
   pullRequestConversationQuery,
@@ -361,6 +361,9 @@ import { PULL_REQUEST_VIEW, type PullRequestView } from "./use-side-panel.js";
  * (`ph-no-capture`).
  */
 
+/** Whether the Chapters view's module has landed, so its boundary's Reload knows a failed chunk from a failed draw. */
+let chaptersTabLanded = false;
+
 /**
  * The Chapters view, loaded as a chunk of its own the first time it is
  * shown rather than with the window, as Settings is, because the renderer
@@ -368,9 +371,15 @@ import { PULL_REQUEST_VIEW, type PullRequestView } from "./use-side-panel.js";
  * chapter logic are opened seldom. What stands while
  * the chunk loads is the view's own wait, for a frame.
  */
-const CHAPTERS_TAB = lazyRoute(() =>
-  import("./agent-chapters-tab.js").then((loaded) => loaded.AgentChaptersTab),
+const CHAPTERS_TAB = lazy(() =>
+  import("./agent-chapters-tab.js").then((loaded) => {
+    chaptersTabLanded = true;
+    return { default: loaded.AgentChaptersTab };
+  }),
 );
+
+/** Whether the Chapters view's module has landed (`LazyBoundary`'s `loaded`). */
+const chaptersTabLoaded = (): boolean => chaptersTabLanded;
 
 /**
  * A view of the tab, filling the room under the header and the tabs, the
@@ -3671,13 +3680,16 @@ function PullRequestTabBody({
                   hidden={view !== PULL_REQUEST_VIEW.CHAPTERS}
                 >
                   {chaptersSeen ? (
-                    <Suspense
-                      fallback={<SpinnerRegion delay label={PULL_REQUEST_WORDS.READING_CHAPTERS} />}
+                    <HandTabActionsContext.Provider
+                      value={viewActions.handFor(PULL_REQUEST_VIEW.CHAPTERS)}
                     >
-                      <HandTabActionsContext.Provider
-                        value={viewActions.handFor(PULL_REQUEST_VIEW.CHAPTERS)}
+                      <LazyBoundary
+                        fallback={
+                          <SpinnerRegion delay label={PULL_REQUEST_WORDS.READING_CHAPTERS} />
+                        }
+                        loaded={chaptersTabLoaded}
                       >
-                        <CHAPTERS_TAB.Route
+                        <CHAPTERS_TAB
                           agentId={agentId}
                           source={source}
                           shown={shown && view === PULL_REQUEST_VIEW.CHAPTERS}
@@ -3688,8 +3700,8 @@ function PullRequestTabBody({
                           threads={changesThreads}
                           lineComments={{ pending: pendingReview, onWritten: written }}
                         />
-                      </HandTabActionsContext.Provider>
-                    </Suspense>
+                      </LazyBoundary>
+                    </HandTabActionsContext.Provider>
                   ) : null}
                 </Fill>
               </>

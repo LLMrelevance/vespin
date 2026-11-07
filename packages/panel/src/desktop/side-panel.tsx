@@ -51,6 +51,7 @@ import {
   useResizeEdge,
 } from "@repo/ui";
 import { ListIcon } from "@repo/ui/icons";
+import { LazyBoundary } from "@repo/ui/lazy-boundary";
 import { ReplayUnmask, ReplayWords } from "@repo/ui/session-replay-marks";
 import {
   agentOfTab,
@@ -81,7 +82,6 @@ import { absurd } from "effect";
 import {
   Fragment,
   type ReactNode,
-  Suspense,
   useCallback,
   useEffect,
   useId,
@@ -192,7 +192,7 @@ import { useWindowAccount } from "../tasks/window-account.js";
 import { appStateQuery, selectCapability } from "../use-app-state.js";
 import { useFileTreeWidth } from "./folded-groups.js";
 import { AgentMenuTab } from "./main-tabs.js";
-import { PULL_REQUEST_TAB } from "./pages-on-demand.js";
+import { PULL_REQUEST_TAB, pullRequestTabLoaded } from "./pages-on-demand.js";
 import { paneTiming, pastRightEdge } from "./pane-motion.js";
 import { PhoneBack, PhoneHead, PlaceMore, phoneFindGroups } from "./phone-head.js";
 import {
@@ -2169,8 +2169,11 @@ function TabContent({
             value={codeFilesRead ? (path) => onBrowseFile(undefined, path, true) : undefined}
           >
             {/* The tab is a chunk of its own, read the first time one is drawn or its card hangs (`pages-on-demand.ts`). */}
-            <Suspense fallback={<SpinnerRegion delay label={readingWords("the pull request")} />}>
-              <PULL_REQUEST_TAB.Route
+            <LazyBoundary
+              fallback={<SpinnerRegion delay label={readingWords("the pull request")} />}
+              loaded={pullRequestTabLoaded}
+            >
+              <PULL_REQUEST_TAB
                 agentId={tab.changes}
                 number={tab.number}
                 control={agentsOf(tab.changes)}
@@ -2181,7 +2184,7 @@ function TabContent({
                 onView={(view) => onPullRequestView(tab, view)}
                 onActions={(actions) => onTabActions(tab, actions)}
               />
-            </Suspense>
+            </LazyBoundary>
           </OpenFileTabProvider>
         </PullRequestsOnGitHub>
       );
