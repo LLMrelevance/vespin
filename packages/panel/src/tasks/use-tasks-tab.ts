@@ -1954,6 +1954,21 @@ export function useTasksTab(input: {
           : { agentId: panelPagesAgent },
     [panelTaskId, panelPagesAgent],
   );
+  // The agent the task's column shows, whose tabs alone its side panel draws (`ownerOf`).
+  const columnAgent =
+    mainTabs.tab !== undefined &&
+    !isOverviewTab(mainTabs.tab) &&
+    mainTabs.tab.kind === STRIP_TAB_KIND.AGENT
+      ? mainTabs.tab.agent
+      : undefined;
+  // The agent whose cloud browser holds each Browser tab, so it stands in that agent's strip.
+  const cloudBrowserAgents = useMemo(
+    () =>
+      new Map(
+        [...(cloudListed ?? []), ...cloudDrafts].map((each) => [each.id, each.agentId] as const),
+      ),
+    [cloudListed, cloudDrafts],
+  );
   const stagedPanel = tasksFixture?.fixtureSidePanel(input.run);
   // A fixture run's staged Terminal tab is held under the account signed in, as a real open holds it, so it stands.
   useHeldTerminalTabs(stagedPanel?.terminals);
@@ -1970,7 +1985,13 @@ export function useTasksTab(input: {
           stop: inboxChosen?.itemId,
         }
       : pageAgents === undefined
-        ? { id: viewed.activeTaskId, holds: NO_HOLDS, files: panelFileReads, pages: panelPages }
+        ? {
+            id: viewed.activeTaskId,
+            holds: NO_HOLDS,
+            files: panelFileReads,
+            pages: panelPages,
+            agent: columnAgent,
+          }
         : { id: pageAgent, holds: NO_HOLDS, pages: panelPages },
     inboxView !== undefined ? inboxAgents : (pageAgents ?? mainTabs.openAgents),
     NO_IDS,
@@ -1989,6 +2010,7 @@ export function useTasksTab(input: {
         ? inboxTaskAgents.heldIds
         : inboxAgents
       : (pageAgents ?? agents.heldIds),
+    cloudBrowserAgents,
   );
   // An agent, or its Pull request, pinned to the sidebar is named there as
   // its tab is named now, so a pin made before the agent had its title or its
@@ -3457,10 +3479,17 @@ export function useTasksTab(input: {
     mainTabs.onShow(taskId, tab);
   };
 
+  // A side panel tab shown on its task with the agent whose strip holds it shown in the task's
+  // column, read on that task rather than the one standing, since only that agent's strip draws it.
+  const showOwnedTab = (taskId: string, tab: SidePanelTab) => {
+    const owner = sidePanel.ownerOf(taskId, tab);
+    if (owner !== undefined) mainTabs.onShow(taskId, agentTab(owner));
+    sidePanel.onShow(taskId, tab);
+  };
   // A tab of the side panel, on its plan, out from under a version history or whatever stands in the plan's place.
   const showPanelTab = (taskId: string, tab: SidePanelTab) => {
     showTask(taskId);
-    sidePanel.onShow(taskId, tab);
+    showOwnedTab(taskId, tab);
   };
   // The task the Tasks tab shows with nothing standing over its plan, whose places a link opens in place (`places/link-places.ts`'s `onTasksTab`).
   const standingTask = () => (!overPlan && !historyRoute.open ? tasks.activeTaskId : undefined);
@@ -4496,7 +4525,7 @@ export function useTasksTab(input: {
       }
       showTask(pin.task);
       if (typeof tab === "string" || tab.kind !== STRIP_TAB_KIND.AGENT) {
-        sidePanel.onShow(pin.task, tab);
+        showOwnedTab(pin.task, tab);
         return;
       }
       if (sidePanel.fullScreen) sidePanel.onToggleFullScreen();
