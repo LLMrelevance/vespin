@@ -32,6 +32,7 @@
 
 import { TUNNEL_CLOSE, tunnelFrameSchema } from "@repo/features/sandbox-tunnel-wire";
 import { SANDBOX_STATE } from "@repo/features/terminal-wire";
+import { type InteractiveShell, ptyLinesOf, type SandboxUnavailable } from "@repo/sandbox";
 import { readEither } from "@repo/wire/effect";
 import {
   Clock,
@@ -49,9 +50,7 @@ import {
   Stream,
 } from "effect";
 import { CODER } from "../agents/coder-host/bounds.js";
-import { ptyLinesOf } from "../agents/sandbox-pty.js";
 import type { SandboxOpen } from "../agents/terminal/agent-sandbox.js";
-import type { InteractiveShell, SandboxUnavailable } from "../agents/vercel-sandbox-api.js";
 import { EXCESS_KEYS } from "../core.js";
 import { jsonOf } from "../http/http-effect.js";
 import type { RelaySocket } from "../terminal/relay.js";
