@@ -3831,6 +3831,9 @@ export function useTasksTab(input: {
       linking.current = undefined;
     }
   };
+  // A mention goes to its task's own place first and shows what it names once it lands there.
+  const arriveOnMention = (mention: DescriptionMention) =>
+    arriveAt(mention.taskId, () => showMention(mention));
 
   /**
    * A link place opened as its route reads it (`places/link-places.ts`): a
@@ -4344,11 +4347,15 @@ export function useTasksTab(input: {
       setChosen((held) => (held !== undefined && pinOnTask(held.pin, taskId) ? undefined : held));
       select(taskId);
     },
-    onShowAgent: leaveFirst((taskId: string, agentId: string) =>
-      openOnTask(taskId, { kind: LINK_PLACE.AGENT, planId: taskId, agentId }),
-    ),
-    onShowColumnTab: leaveFirst(showColumnTab),
-    onShowPanelTab: leaveFirst(showPanelTab),
+    // Each tab door goes to its task's own place first, through the router's blocker, and shows the tab once it lands
+    // there. Note that the move is never a link's step written ahead (`linkingTo`), since the history writes that past
+    // the blocker.
+    onShowAgent: (taskId, agentId) =>
+      arriveAt(taskId, () =>
+        openOnTask(taskId, { kind: LINK_PLACE.AGENT, planId: taskId, agentId }),
+      ),
+    onShowColumnTab: (taskId, tab) => arriveAt(taskId, () => showColumnTab(taskId, tab)),
+    onShowPanelTab: (taskId, tab) => arriveAt(taskId, () => showPanelTab(taskId, tab)),
     inbox: input.inboxWaiting,
     inboxShown: shownInbox,
     inboxTasks: input.inboxTasks,
@@ -4430,11 +4437,11 @@ export function useTasksTab(input: {
     },
     onShowFile: showFile,
     // A version's Open lands where its writer wrote it: an agent's tab.
-    onShowSource: leaveFirst(showSource),
+    onShowSource: (taskId, source) => arriveAt(taskId, () => showSource(taskId, source)),
     // A task named by an Inbox item or a call's row opens on its agents.
     onShowTask: (taskId) => arriveAt(taskId, () => showTaskAgents(taskId)),
     // Each ask is its own, so the same section asked twice scrolls twice.
-    onShowMention: leaveFirst(showMention),
+    onShowMention: arriveOnMention,
     onOpenLink: leaveFirst((link: ReadLink) => openLink(link)),
     messageReveal,
     // Only the ask answered is let go; a newer one stands until its agent's tab answers it.
@@ -4543,7 +4550,7 @@ export function useTasksTab(input: {
       readModels: agents.readModels,
       onClose: () => setNewTaskAsk(undefined),
       tasks: sidebar,
-      onShowMention: leaveFirst(showMention),
+      onShowMention: arriveOnMention,
     },
     // Leaving the task is going Home, whose arrival lets go of the task (`places/place-binding.ts`).
     onLeaveTask: () => leaveTask(),
