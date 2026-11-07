@@ -1503,7 +1503,12 @@ const updateAgentRunnerToken = SqlSchema.findAll({
     Database.use((db) =>
       db
         .update(agentTable)
-        .set({ runnerTokenHash })
+        .set(
+          // A bearer recorded is a launch, numbered past every one before it; a bearer let go numbers none.
+          runnerTokenHash === null
+            ? { runnerTokenHash }
+            : { runnerTokenHash, runnerLaunch: sql`${agentTable.runnerLaunch} + 1` },
+        )
         .where(reachableAgent(userId, agentId))
         .returning({ id: agentTable.id }),
     ),
@@ -1535,6 +1540,19 @@ const findAgentSeenAt = SqlSchema.findOneOption({
     Database.use((db) =>
       db
         .select({ seenAt: agentTable.seenAt })
+        .from(agentTable)
+        .where(eq(agentTable.id, agentId))
+        .limit(1),
+    ),
+});
+
+const findRunnerLaunch = SqlSchema.findOneOption({
+  Request: Schema.Struct({ agentId: Schema.String }),
+  Result: Schema.Struct({ launch: Schema.Number }),
+  execute: ({ agentId }) =>
+    Database.use((db) =>
+      db
+        .select({ launch: agentTable.runnerLaunch })
         .from(agentTable)
         .where(eq(agentTable.id, agentId))
         .limit(1),
@@ -3698,7 +3716,7 @@ export function recordNativeHanded(
   return updateNativeHanded({ ...target, handed });
 }
 
-/** The digest of the runner's bearer recorded on the agent's conversation, or null to retire it; answers whether the account reached the agent. */
+/** The digest of the runner's bearer recorded on the agent's conversation, as a launch of its runner numbered past every one before it (`agent.runner_launch`), or null to retire it; answers whether the account reached the agent. */
 export function recordAgentRunnerToken(
   userId: string,
   agentId: string,
@@ -3725,6 +3743,18 @@ export function recordAgentSeen(userId: string, agentId: string): AgentStoreEffe
 export function readAgentSeenAt(agentId: string): AgentStoreEffect<Date | null> {
   return Effect.map(findAgentSeenAt({ agentId }), (row) =>
     Option.match(row, { onNone: () => null, onSome: ({ seenAt }) => seenAt }),
+  );
+}
+
+/**
+ * How many launches have recorded a bearer for the agent's runner: the
+ * attempt its newest launch's turns run under (`turns.attempt`); 0 where
+ * none has, or no agent has the id. Read with no account in hand, for an
+ * agent the reap holds the runner lease of, under which no launch moves it.
+ */
+export function runnerLaunchOf(agentId: string): AgentStoreEffect<number> {
+  return Effect.map(findRunnerLaunch({ agentId }), (row) =>
+    Option.match(row, { onNone: () => 0, onSome: ({ launch }) => launch }),
   );
 }
 

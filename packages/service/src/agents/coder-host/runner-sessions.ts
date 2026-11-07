@@ -115,9 +115,9 @@ import { settleRunnerLostTurns } from "@repo/database/models/abandoned-turns";
 import { readAgentRepositories } from "@repo/database/models/agent-repositories";
 import {
   type Agent,
-  type AgentLatestTurn,
   awaitingLinesOfReached,
   hasRepository,
+  lastSettledTurnsOfReached,
   latestTurnsOfReached,
   RUNNING_TURN_STATUSES,
   readAgent,
@@ -152,6 +152,7 @@ import { type ConversationTarget, storeWriter } from "@repo/database/models/writ
 import { AGENT_MACHINE, type AgentMachineKind, CONTEXT_WINDOW } from "@repo/features/agent-wire";
 import { TURN_FAILURE } from "@repo/features/turn-run";
 import { causeKind, failureKind } from "@repo/runtime/effect";
+import { TURN_STATUS } from "@repo/wire";
 import type { UserContent } from "ai";
 import {
   Cause,
@@ -167,7 +168,6 @@ import {
   Result,
   Schedule,
 } from "effect";
-import { TURN_ORIGIN } from "../../core.js";
 import { HostedEnvironment } from "../../environment.js";
 import {
   recordServerEvent,
@@ -551,25 +551,28 @@ function launchFingerprint(
 }
 
 /**
- * Whether the agent's turn ended, and it was last on screen (`warm`),
+ * Whether the agent's last turn ended, and it was last on screen (`warm`),
  * longer ago than the warm window of the machine given
  * (`CODER.RUNNER_WARM`), so we have closed or are closing it, and the runner
  * may soon end itself (`CODER.RUNNER_WARM_SLACK`). Never where the window
- * is zero, whose runner is launched to end at its turn's end. An ended turn
- * with no settle time stamped reads as ended long ago. When it was on
- * screen is read only for a turn that ended past the window.
+ * is zero, whose runner is launched to end at its turn's end; never while a
+ * turn runs; and never before any turn ended, whose runner was launched for
+ * the turn that opened. Note that the window counts from the newest turn to
+ * end, whatever turn stands queued behind it, since no runner took that
+ * turn's line yet, this message's own among them. When it was on screen is
+ * read only for a turn that ended past the window.
  */
 function pastWarmWindow(
   machine: AgentMachineKind,
   agentId: string,
-  turn: AgentLatestTurn | undefined,
+  turnRunning: boolean,
+  lastEndedAt: Date | undefined,
   now: number,
 ) {
   return Effect.gen(function* () {
     const window = Duration.toMillis(CODER.RUNNER_WARM[machine]);
-    if (window === 0 || turn === undefined) return false;
-    if (RUNNING_TURN_STATUSES.has(turn.status)) return false;
-    if (turn.settledAt !== null && now - turn.settledAt.getTime() <= window) return false;
+    if (window === 0 || turnRunning || lastEndedAt === undefined) return false;
+    if (now - lastEndedAt.getTime() <= window) return false;
     const seenAt = yield* readAgentSeenAt(agentId);
     return seenAt === null || now - seenAt.getTime() > window;
   });
@@ -1438,9 +1441,10 @@ export const runnerSessions = <
           deliveryId: sent.line.uuid,
         } as const;
         // Where the agent's turns stand as the message arrives, counted with how it reached the runner.
+        // Note that a turn queued for a runner, as the one this message's own send may have queued, runs nothing yet.
         const { conversationId } = agent;
         const turn = (yield* latestTurnsOfReached([conversationId])).get(conversationId);
-        const turnRunning = turn !== undefined && RUNNING_TURN_STATUSES.has(turn.status);
+        const turnRunning = turn?.status === TURN_STATUS.RUNNING;
         // A session opened on experiments since changed is opened afresh, on the same place, its
         // conversation replayed into it: its harness's session is let go before anything is
         // handed, so every launch past here, the one a hand-on runs past the answer among them,
@@ -1483,7 +1487,13 @@ export const runnerSessions = <
           // has gone, so a line written to a runner on its way down is lost.
           if (
             restart ||
-            (yield* pastWarmWindow(found.value.machine, agent.id, turn, handedAt)) ||
+            (yield* pastWarmWindow(
+              found.value.machine,
+              agent.id,
+              turnRunning,
+              (yield* lastSettledTurnsOfReached([conversationId])).get(conversationId),
+              handedAt,
+            )) ||
             (yield* stopWritten(machine, running)) ||
             (yield* staleWarm(agent, layout, running.mark, turnRunning))
           ) {
@@ -1896,7 +1906,7 @@ export const runnerSessions = <
       Effect.gen(function* () {
         const { conversationId } = agent;
         const turn = (yield* latestTurnsOfReached([conversationId])).get(conversationId);
-        if (turn !== undefined && RUNNING_TURN_STATUSES.has(turn.status)) return;
+        if (turn?.status === TURN_STATUS.RUNNING) return;
         const found = yield* firstPlace(machine, userId, sessionId);
         if (Option.isNone(found) || found.value.agentId !== agent.id) return;
         const live = yield* liveRunner(machine, found.value, CODER.RUNNER_EXIT_READ);
@@ -1927,12 +1937,7 @@ export const runnerSessions = <
             TURN_FAILURE.MODEL,
           );
           const writer = yield* storeWriter({ tools: CODER_TOOL_SET });
-          const turnId = randomUUID();
-          yield* writer.enqueueTurn(
-            { userId, conversationId: agent.conversationId },
-            { turnId, runtimeTurnId: turnId, origin: TURN_ORIGIN.TYPED },
-          );
-          // The checkout's own sentence names GitHub or the sandbox (`status.ts`'s `FAILURE_WORDS`);
+          // The turn its first message queued is the one failed. The checkout's own sentence names GitHub or the sandbox (`status.ts`'s `FAILURE_WORDS`);
           // any other failure, a missing snapshot among them, reads as the sandbox's, with its reason,
           // and a sandbox's failure with Vercel's own answer after the sentence the status reads it by.
           const detail =
