@@ -126,6 +126,7 @@ import {
 } from "../testing/desktop-inbox.js";
 import { focusRestOn, restOn } from "../testing/hint-rest.js";
 import { markdownHtmlParserLanded } from "../testing/markdown.js";
+import { chooseMenuItem, menuItems } from "../testing/phone-head.js";
 import { tasksControl } from "../testing/tasks-control.js";
 import { viewerPlace } from "../testing/viewer-place.js";
 
@@ -241,6 +242,50 @@ test("the pane's crumbs lead with their tabs' glyphs, the plan's document and th
   assert.deepEqual(asked.shownTasks, [BILLING.id]);
   assert.deepEqual(asked.shownAgents, [[BILLING.id, AGENT.id]], "the agent opens in its own tab");
   assert.deepEqual(asked.previewedAgents, [], "no transcript opens beside the item");
+});
+
+test("a right-click on the pane's task crumb opens the task's one menu, Change repository among it, whose Rename turns the crumb into the task's name field, and on its agent's crumb the agent's menu, whose Rename turns that crumb into the agent's name field", async () => {
+  const { page } = mount([], { chosen: ON_THRESHOLD });
+  await settle();
+  const crumb = (at: number) =>
+    page.querySelectorAll<HTMLButtonElement>('.inbox-view-items nav[aria-label="Path"] button')[
+      at
+    ] ?? assert.fail(`crumb ${at} is drawn`);
+  const rightClick = (target: HTMLElement) =>
+    act(() => {
+      target.dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, clientX: 40, clientY: 60 }),
+      );
+    });
+  const offered = () => menuItems().map((item) => item.label);
+
+  rightClick(crumb(0));
+  for (const item of ["Copy link", "Rename", "Change repository", "Permanently delete"]) {
+    assert.ok(offered().includes(item), `the task's crumb offers ${item}`);
+  }
+  chooseMenuItem("Rename");
+  await settle();
+  assert.ok(
+    page.querySelector('.inbox-view-items nav[aria-label="Path"] input[aria-label="Task name"]'),
+    "the task's crumb stands as its name field",
+  );
+  act(() =>
+    document.activeElement?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+    ),
+  );
+  await settle();
+
+  rightClick(crumb(1));
+  for (const item of ["Copy link", "Rename", "Archive"]) {
+    assert.ok(offered().includes(item), `the agent's crumb offers ${item}`);
+  }
+  chooseMenuItem("Rename");
+  await settle();
+  assert.ok(
+    page.querySelector('.inbox-view-items nav[aria-label="Path"] input[aria-label="Agent name"]'),
+    "the agent's crumb stands as its name field",
+  );
 });
 
 /** What an intersection observer reports of the heading it watches: in the thread's view, or scrolled up past its top. */
