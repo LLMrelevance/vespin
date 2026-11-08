@@ -58,7 +58,7 @@ import { Store, useSelector } from "@tanstack/react-store";
 import { type ActResult, type ActVariables, askKept, KEPT, type Kept, notKept } from "./act.js";
 import { priorityOf, statusOf } from "./desktop/task-row-parts.js";
 import type { ShownFailure } from "./failure-report.js";
-import { showToast, TOAST_HOLD, undoToast, withdrawToast } from "./toast.js";
+import { showToast, TOAST_HOLD, type ToastNotice, undoToast, withdrawToast } from "./toast.js";
 
 /** The most entries each list keeps; an older one leaves as a newer one comes. */
 const MAX_ENTRIES = 50;
@@ -469,6 +469,8 @@ export interface UndoWrite<Rows, Asked, Change, Kind extends PortActKind, Answer
   readonly surface: FailureSurface;
   /** What a refusal of it is about. */
   readonly about?: (change: Change) => FailureAbout;
+  /** What a refusal reports as its cause, of the answer that refused it; the answer itself where none is named. */
+  readonly cause?: (answer: Answer) => unknown;
 }
 
 /** What a declared write's refusal reports: its surface, the answer that refused it, and what it is about. */
@@ -477,7 +479,8 @@ function writeFailure<Rows, Asked, Change, Kind extends PortActKind, Answer>(
   change: Change,
   answer: Answer,
 ): ShownFailure {
-  return { surface: write.surface, cause: answer, about: write.about?.(change) };
+  const cause = write.cause === undefined ? answer : write.cause(answer);
+  return { surface: write.surface, cause, about: write.about?.(change) };
 }
 
 /** A declared write's answer as a run of it: applied where kept, else refused in its own words. */
@@ -499,19 +502,21 @@ function answeredRun<Rows, Asked, Change, Kind extends PortActKind, Answer>(
  * refusal says so in its own words, since the menu that asked has closed.
  * The entry is taken back only while the rows still hold what the act set,
  * and put back only while they hold what its inverse set. Answers whether
- * the service kept it; not where there was nothing to change.
+ * the service kept it; not where there was nothing to change. Its toasts
+ * are said on `say`, a working toast's settle where the press showed one.
  */
 export function pressWrite<Rows, Asked, Change, Kind extends PortActKind, Answer>(
   write: UndoWrite<Rows, Asked, Change, Kind, Answer>,
   doors: RowDoors<Rows, Kind>,
   asked: Asked,
+  say: (notice: ToastNotice) => void = showToast,
 ): Promise<boolean> {
   const change = write.read(doors.rows(), asked);
   if (change === undefined) return Promise.resolve(false);
   return write.act(doors.send, change, doors.rows()).then((answer) => {
     const refusal = write.refused(answer);
     if (refusal !== undefined) {
-      showToast({
+      say({
         replayUnmasked: true,
         words: refusal,
         tone: STATUS_TONE.DANGER,
@@ -520,7 +525,7 @@ export function pressWrite<Rows, Asked, Change, Kind extends PortActKind, Answer
       });
       return false;
     }
-    keepWrite(write, doors, change);
+    keepWrite(write, doors, change, say);
     return true;
   });
 }
@@ -531,12 +536,13 @@ export function pressWrite<Rows, Asked, Change, Kind extends PortActKind, Answer
  * for a write whose change is read off its act's answer, which `pressWrite`
  * cannot read before it sends. The entry is taken back only while the rows
  * still hold what the act set, and put back only while they hold what its
- * inverse set.
+ * inverse set. Its toast is said on `say`, as `pressWrite`'s are.
  */
 export function keepWrite<Rows, Asked, Change, Kind extends PortActKind, Answer>(
   write: UndoWrite<Rows, Asked, Change, Kind, Answer>,
   doors: RowDoors<Rows, Kind>,
   change: Change,
+  say: (notice: ToastNotice) => void = showToast,
 ): void {
   const run = (
     due: (rows: Rows, change: Change) => boolean,
@@ -554,7 +560,7 @@ export function keepWrite<Rows, Asked, Change, Kind extends PortActKind, Answer>
     undo: () => run(write.holds, write.undo),
     redo: () => run(write.undone, write.act),
   });
-  showToast({ ...undoToast(words, undo), replayUnmasked: write.unmasked?.(change) ?? true });
+  say({ ...undoToast(words, undo), replayUnmasked: write.unmasked?.(change) ?? true });
 }
 
 /**
