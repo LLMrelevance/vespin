@@ -20,7 +20,7 @@ import {
 } from "@repo/ui/tasks-model";
 import { useQuery } from "@tanstack/react-query";
 import { askKept, firstRefusal, type Kept, notKept } from "../act.js";
-import { TOAST_HOLD, undoToast, useToast } from "../toast.js";
+import { TOAST_HOLD, useToast } from "../toast.js";
 import { heldTask, pressRows, ROW_WRITE, type TaskRows } from "../undo-stack.js";
 import { appStateQuery, selectFixtureStaged } from "../use-app-state.js";
 import { useTaskRowDoors } from "./task-row-doors.js";
@@ -137,12 +137,8 @@ export function useStandingWrites(drawn: () => TasksView): StandingWrites {
         return;
       }
       const words = settledNote(status, landed.length, refused);
-      const undo = pressed.keep(words, (taskId) => landed.includes(taskId));
-      toast(
-        undo === undefined
-          ? { replayUnmasked: true, words, tone: STATUS_TONE.COMPLETE, hold: TOAST_HOLD.DONE }
-          : { ...undoToast(words, undo), replayUnmasked: true },
-      );
+      const said = pressed.keep(words, (taskId) => landed.includes(taskId));
+      if (said !== undefined) toast(said);
     });
   };
 
