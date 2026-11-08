@@ -1,51 +1,101 @@
 import {
+  Archive,
+  ArchiveRestore,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  ArrowUpRight,
   AudioLines,
   Bold,
   Bot,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleAlert,
+  CircleArrowUp,
   CircleCheck,
   Code,
+  CodeXml,
+  Copy,
+  Download,
+  Ellipsis,
+  ExternalLink,
   Eye,
   EyeOff,
+  FastForward,
+  FileText,
+  Folder,
   Heading1,
   Heading2,
   Heading3,
+  Image,
   Inbox,
   Italic,
+  Keyboard,
+  Laptop,
+  Lightbulb,
   Link,
   List,
   ListChecks,
   ListOrdered,
+  Maximize,
   Maximize2,
   MessageSquare,
   MessageSquarePlus,
+  Mic,
+  Minimize,
   Minimize2,
   Minus,
+  Monitor,
   PanelLeft,
   PanelRight,
+  Pause,
+  Pencil,
   Pin,
   PinOff,
+  Play,
   Plug,
+  Plus,
+  Rewind,
   RotateCw,
+  Search,
   SearchX,
+  Settings,
+  SkipBack,
+  SkipForward,
+  Square,
   SquareCode,
+  SquarePen,
+  SquareTerminal,
   Strikethrough,
   Table,
   TextQuote,
+  Trash2,
   Type,
   Unlink,
+  User,
+  X,
 } from "lucide-react";
 
+import React from "react";
+
 import { lucideGlyph } from "./lucide-glyph.js";
+
+// `tsx` executes imported workspace-package JSX with the classic runtime.
+void React;
 
 /**
  * lucide-glyphs.tsx -- the glyphs `glyphs.tsx` once drew as copies of
  * Lucide's, now Lucide's own, under the names their call sites already import.
  *
- * Twenty-eight were Lucide's paths redrawn in our stroke and three were
- * Tabler's (the plug and both pins), each beside a Lucide glyph of the same
- * meaning. They are Lucide's drawing now, in our stroke (`lucide-glyph.tsx`),
- * so there is one drawing of each. A name here goes when the last screen that
+ * Every one was Lucide's paths redrawn in our stroke, mostly a step smaller
+ * than Lucide's, but three, which were Tabler's (the plug and both pins),
+ * each beside a Lucide glyph of the same meaning. They are Lucide's drawing
+ * now, in our stroke (`lucide-glyph.tsx`), so there is one drawing of each
+ * and every glyph stands at one scale. `RemoveIcon` is Lucide's X at a stroke
+ * of its own. A name here goes when the last screen that
  * imports it draws the glyph through `GLYPH` instead. The one name that is
  * no copy is `AgentPlaceholderIcon`, Lucide's robot in the muted ink, which
  * stands where `glyphs.tsx` once held an agent's mark's box empty.
@@ -166,3 +216,162 @@ export const ShowSecretIcon = lucideGlyph(Eye, "icon-button-glyph");
 
 /** The eye struck through: masks a secret's typed characters again. */
 export const HideSecretIcon = lucideGlyph(EyeOff, "icon-button-glyph");
+
+/*
+ * The everyday controls' glyphs: copy, edit, archive, search, settings, and
+ * the rest a row or a toolbar draws beside the registry's Lucide glyphs.
+ */
+
+/** Sits beside a provider's name to say it is connected, in the state palette. */
+export const CheckIcon = lucideGlyph(Check, "credential-check");
+
+/** A check, drawn as a button's glyph: marks a task done. */
+export const MarkDoneIcon = lucideGlyph(Check, "icon-button-glyph");
+
+export const CopyIcon = lucideGlyph(Copy, "icon-button-glyph");
+
+export const PencilIcon = lucideGlyph(Pencil, "icon-button-glyph");
+
+export const TrashIcon = lucideGlyph(Trash2, "icon-button-glyph");
+
+/** A box under its lid: puts an agent, or a task left archived, away under Archived. */
+export const ArchiveIcon = lucideGlyph(Archive, "icon-button-glyph");
+
+/** A box with an arrow rising out of it: brings an archived task back. */
+export const UnarchiveIcon = lucideGlyph(ArchiveRestore, "icon-button-glyph");
+
+/** The display the app stands on: everything about where and how it is drawn. */
+export const DisplayIcon = lucideGlyph(Monitor, "settings-icon");
+
+export const KeyboardIcon = lucideGlyph(Keyboard, "settings-icon");
+
+/** Heads the Updates section: the arrival a newer release waits as. */
+export const DownloadIcon = lucideGlyph(Download, "settings-icon");
+
+/** An arrow rising in a circle: the sidebar's way into a newer release. */
+export const UpdateIcon = lucideGlyph(CircleArrowUp, "settings-icon");
+
+/** Drawn rather than typed: a ↗ character depends on a font having one. */
+export const ExternalIcon = lucideGlyph(ExternalLink, "link-icon");
+
+/** A person: the account the app is signed in as. */
+export const UserIcon = lucideGlyph(User, "settings-icon");
+
+/** A magnifier: the list read for the rows that say the typed words. */
+export const SearchIcon = lucideGlyph(Search, "search-glyph");
+
+/** Work happening on this Mac: the machine it is happening on. */
+export const LaptopIcon = lucideGlyph(Laptop, "filter-icon");
+
+/** The microphone itself — what macOS's own access ask is about. */
+export const MicrophoneIcon = lucideGlyph(Mic, "settings-icon");
+
+/** A picture, on the control that attaches one. */
+export const ImageIcon = lucideGlyph(Image, "icon-button-glyph");
+
+/** A pencil over an open square: a new piece of work, as every chat app's compose button draws it. */
+export const ComposeIcon = lucideGlyph(SquarePen, "icon-button-glyph");
+
+/** A cog: the account's row that leads to Settings, drawn the way every app draws settings. */
+export const GearIcon = lucideGlyph(Settings, "gear-glyph");
+
+/** A terminal's prompt: the Settings page about the coding agents that run in one. Outline, like the other pages' glyphs. */
+export const TerminalIcon = lucideGlyph(SquareTerminal, "settings-icon");
+
+/** A page with its corner turned down and lines of text on it: the task's own document. */
+export const DocumentIcon = lucideGlyph(FileText, "icon-button-glyph");
+
+/** A folder with its tab: a repository whose owner's picture is not drawn. */
+export const FolderIcon = lucideGlyph(Folder, "icon-button-glyph");
+
+/** Four corners turned out: a video grown to fill the screen. */
+export const FullScreenIcon = lucideGlyph(Maximize, "icon-button-glyph");
+
+/** Four corners turned in: a full-screen video brought back to its place. */
+export const ExitFullScreenIcon = lucideGlyph(Minimize, "icon-button-glyph");
+
+/** A pair of angle brackets with a slash between them: code. */
+export const CodeIcon = lucideGlyph(CodeXml, "icon-button-glyph");
+
+/*
+ * The arrows, chevrons, and marks a control points or acts with.
+ */
+
+/** Stands down without choosing: the cancel a control becomes mid-action. */
+export const CloseIcon = lucideGlyph(X, "icon-button-glyph");
+
+/** Three dots in a row: more actions on the thing it sits beside, in a menu. */
+export const EllipsisIcon = lucideGlyph(Ellipsis, "icon-button-glyph");
+
+/** Points back out of one: the control that returns to the front page. */
+export const BackIcon = lucideGlyph(ChevronLeft, "icon-button-glyph");
+
+/** Points on, the mirror of `BackIcon`: a calendar's next month. */
+export const ForwardIcon = lucideGlyph(ChevronRight, "icon-button-glyph");
+
+/** An arrow pointing left: back to the place the window stood on before. */
+export const ArrowLeftIcon = lucideGlyph(ArrowLeft, "icon-button-glyph");
+
+/** An arrow pointing right: forward again to where back came from. */
+export const ArrowRightIcon = lucideGlyph(ArrowRight, "icon-button-glyph");
+
+/** An arrow pointing up: a row moved one place up its list. */
+export const ArrowUpIcon = lucideGlyph(ArrowUp, "icon-button-glyph");
+
+/** An arrow pointing down: a row moved one place down its list. */
+export const ArrowDownIcon = lucideGlyph(ArrowDown, "icon-button-glyph");
+
+/** An arrow up and to the right, set after a link's words: a press leaves the place for another. */
+export const ArrowUpRightIcon = lucideGlyph(
+  ArrowUpRight,
+  "ui-text-link-out ms-[0.12em] inline-block size-[0.78em] align-[-0.02em] opacity-55 transition-opacity duration-(--ui-duration-hover) ease-motion-exit group-hover/text-link:opacity-100 group-focus-visible/text-link:opacity-100",
+);
+
+/** A plus: a workspace or an agent that did not exist before the action. */
+export const PlusIcon = lucideGlyph(Plus, "icon-button-glyph");
+
+/** A lit bulb: what our agents remember for the workspace. */
+export const MemoryIcon = lucideGlyph(Lightbulb, "icon-button-glyph");
+
+/** Points down into a menu: the half of a split button that opens its choices. */
+export const ChevronDownIcon = lucideGlyph(ChevronDown, "settings-chevron");
+
+/** Points at a fold's body, turned down by its stylesheet while the fold is open. */
+export const FoldChevronIcon = lucideGlyph(ChevronRight, "ui-disclosure-chevron");
+
+/** Points into a submenu beside a menu row, in the chevron's own stroke. */
+export const ChevronRightIcon = lucideGlyph(ChevronRight, "settings-chevron");
+
+/*
+ * The transport, in Lucide's outlines as every other glyph is.
+ */
+
+/** Starts a run: the triangle every transport draws for play. */
+export const PlayIcon = lucideGlyph(Play, "control-icon");
+
+/** Holds what is playing: the two bars every transport draws for pause. */
+export const PauseIcon = lucideGlyph(Pause, "control-icon");
+
+/** Steps a paused video back one frame: a bar and the play triangle turned toward it. */
+export const PreviousFrameIcon = lucideGlyph(SkipBack, "control-icon");
+
+/** Steps a paused video on one frame: the play triangle and a bar it stops at. */
+export const NextFrameIcon = lucideGlyph(SkipForward, "control-icon");
+
+/** A video sent back a few seconds: the two triangles every transport draws for rewind. */
+export const RewindIcon = lucideGlyph(Rewind, "control-icon");
+
+/** A video sent on a few seconds: the mirror of `RewindIcon`, every transport's fast-forward. */
+export const FastForwardIcon = lucideGlyph(FastForward, "control-icon");
+
+/** Stops what is playing or running: Lucide's square, filled, because an outline square reads as a checkbox at a control's size. */
+export const StopIcon = lucideGlyph(Square, "control-icon fill-current");
+
+/**
+ * Takes one attachment back off the note: Lucide's X at a stroke of its own,
+ * because at the eight pixels it is drawn at the shared stroke thins to
+ * nothing and the X reads as a dot.
+ */
+export function RemoveIcon(): React.JSX.Element {
+  return <X strokeWidth={3.4} aria-hidden="true" focusable="false" />;
+}

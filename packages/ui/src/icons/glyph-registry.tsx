@@ -47,37 +47,35 @@ import {
 } from "lucide-react";
 import React from "react";
 
+import { McpIcon } from "../face/glyphs.js";
+import { MARK_PROVIDER, ProviderMark } from "../marks/provider-mark.js";
+import { lucideGlyph } from "./lucide-glyph.js";
 import {
+  AlertIcon,
   ArchiveIcon,
   BackIcon,
+  CircleCheckIcon,
   CloseIcon,
+  CommentsIcon,
   CopyIcon,
   DocumentIcon,
   EllipsisIcon,
   ExternalIcon,
   GearIcon,
+  InboxIcon,
   LaptopIcon,
+  LinkIcon,
   MarkDoneIcon,
-  McpIcon,
   MemoryIcon,
   PencilIcon,
   PlusIcon,
+  RetryIcon,
   SearchIcon,
   StopIcon,
   TerminalIcon,
   TrashIcon,
   UnarchiveIcon,
   UserIcon,
-} from "../face/glyphs.js";
-import { MARK_PROVIDER, ProviderMark } from "../marks/provider-mark.js";
-import { lucideGlyph } from "./lucide-glyph.js";
-import {
-  AlertIcon,
-  CircleCheckIcon,
-  CommentsIcon,
-  InboxIcon,
-  LinkIcon,
-  RetryIcon,
   WaveformIcon,
 } from "./lucide-glyphs.js";
 
