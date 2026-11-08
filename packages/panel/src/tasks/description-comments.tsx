@@ -2251,6 +2251,11 @@ export function DescriptionCommentLayer({
           ? target.closest<HTMLElement>(`.${COMMENT_MARK_CLASS}[data-threads]`)
           : null;
       setPointed(marked?.dataset.threads?.split(" ")[0]);
+      // A divider holds no words for a thread to stand on, so it offers no button, and the block's it came from goes.
+      if (target instanceof HTMLHRElement) {
+        setHovered(undefined);
+        return;
+      }
       const found = blockAt(target, unitClass);
       if (found === undefined) return;
       // Note that a block whose words a thread already covers is commented on through that thread, so it offers no button.
