@@ -1,5 +1,8 @@
 import type { DatabaseServices } from "@repo/database/core/query";
-import { scheduledAutomations } from "@repo/database/models/automation-store";
+import {
+  type ScheduledAutomation,
+  scheduledAutomations,
+} from "@repo/database/models/automation-store";
 import { Effect, Layer, type Redacted } from "effect";
 import { HttpRouter } from "effect/http";
 import { HostedEnvironment } from "../environment.js";
@@ -44,12 +47,11 @@ interface AutomationSchedulesBackfillOptions {
   readonly cronSecret: Redacted.Redacted | undefined;
 }
 
-/** One page kept: how many schedules were kept, how many Vercel refused, and where the next page starts. */
-const keepPage = Effect.fnUntraced(function* (after: string | null) {
+/** Each automation's schedule kept, answering per automation whether it was; a refusal is logged by its code and the rest are still kept. */
+const keepEach = Effect.fnUntraced(function* (automations: readonly ScheduledAutomation[]) {
   const cadence = yield* AutomationCadence;
-  const page = yield* scheduledAutomations(after, BACKFILL.PAGE);
-  const kept = yield* Effect.forEach(
-    page,
+  return yield* Effect.forEach(
+    automations,
     (automation) =>
       cadence.keep(automation).pipe(
         Effect.as(true),
@@ -64,12 +66,48 @@ const keepPage = Effect.fnUntraced(function* (after: string | null) {
       ),
     { concurrency: BACKFILL.CONCURRENCY },
   );
+});
+
+/** One page kept: how many schedules were kept, how many Vercel refused, and where the next page starts. */
+const keepPage = Effect.fnUntraced(function* (after: string | null) {
+  const page = yield* scheduledAutomations(after, BACKFILL.PAGE);
+  const kept = yield* keepEach(page);
   const last = page.at(-1);
   return {
     kept: kept.filter(Boolean).length,
     refused: kept.filter((each) => !each).length,
     next: page.length < BACKFILL.PAGE || last === undefined ? null : last.id,
   };
+});
+
+/**
+ * The minute sweep's backfill: the scheduled automations walked a page at a
+ * time from the first, each call anew, until a page holds some with no
+ * schedule standing, which are kept and the walk ends; answers how many it
+ * kept. Note that it starts from the first page every call rather than
+ * carrying a cursor, because a full pass is cheap (one query and one list
+ * per workspace a page, eleven automations in one workspace on production)
+ * and keeps nothing once every schedule stands, so it needs no row of its
+ * own. A schedule Vercel refuses is logged and asked again the next minute,
+ * and a page whose every missing schedule was refused is walked past, so one
+ * refused schedule never holds back the pages after it.
+ *
+ * Temporary: it leaves with this module, the route, and
+ * `scripts/backfill-automation-schedules.sh` once production holds every
+ * scheduled automation's schedule.
+ */
+export const keepMissingSchedules = Effect.fnUntraced(function* () {
+  const cadence = yield* AutomationCadence;
+  let after: string | null = null;
+  while (true) {
+    const page: readonly ScheduledAutomation[] = yield* scheduledAutomations(after, BACKFILL.PAGE);
+    const missing = yield* cadence.unscheduled(page);
+    const kept = (yield* keepEach(missing)).filter(Boolean).length;
+    if (kept > 0) return kept;
+    const last = page.at(-1);
+    if (page.length < BACKFILL.PAGE || last === undefined) return 0;
+    after = last.id;
+  }
 });
 
 /** POST: one page of the backfill, under the deployment's secret. */
