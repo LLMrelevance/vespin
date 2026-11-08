@@ -1,12 +1,16 @@
+// @vitest-environment jsdom
 import assert from "node:assert/strict";
 import { FAILURE_SURFACE } from "@repo/features/shown-failure";
 import type { TaskSummary } from "@repo/features/task-wire";
 import { IDLE_TASKS_VIEW, type TasksPinParams, type TasksView } from "@repo/features/tasks-view";
 import { ACT_KIND } from "@repo/host/acts";
+import { createElement } from "react";
 import { afterEach, test } from "vitest";
 import {
   forgetUndo,
+  type HeldWrite,
   type LocalWrite,
+  pressHeld,
   pressLocal,
   pressRows,
   pressWrite,
@@ -139,6 +143,34 @@ test("⌘Z leaves a declared write's target changed since as it stands, and send
 
   assert.equal(undone, UNDO_RAN.CHANGED);
   assert.deepEqual(window.sent, [{ taskId: TASK_ID, pinned: true }]);
+});
+
+/** A held write that answers every send at once, each send named in `sent` in order. */
+function heldWrite(sent: string[]): HeldWrite<undefined, string, number, number> {
+  return {
+    words: (itemId) => `Resolved ${itemId}`,
+    glyph: () => createElement("span"),
+    unmasked: () => true,
+    act: (_doors, itemId) => Promise.resolve(sent.push(`act ${itemId}`)),
+    letGo: (_doors, itemId) => void sent.push(`let go ${itemId}`),
+    undo: (_doors, itemId) => Promise.resolve(sent.push(`undo ${itemId}`)),
+    refused: () => undefined,
+    unheld: () => undefined,
+  };
+}
+
+test("⌘Z takes a held write back once, without letting its hold go, and leaves nothing to put back", async () => {
+  const sent: string[] = [];
+  await pressHeld(heldWrite(sent), undefined, "item-1");
+
+  const undone = await undoLast();
+  const again = await undoLast();
+  const redone = await redoLast();
+
+  assert.equal(undone, UNDO_RAN.APPLIED);
+  assert.equal(again, undefined);
+  assert.equal(redone, undefined);
+  assert.deepEqual(sent, ["act item-1", "undo item-1"]);
 });
 
 /** A line of held words as a window holds them alone, and its removal of one by key. */
