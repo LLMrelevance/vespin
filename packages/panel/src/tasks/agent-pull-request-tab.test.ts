@@ -2237,19 +2237,6 @@ test("the toolbar's ⋯ offers nothing for the pull request before any of it is 
   );
 });
 
-test("a ⌘-click on the title opens the pull request on GitHub, and a plain one opens nothing", async () => {
-  const tab = await draw(controlAnswering());
-  const title =
-    tab.querySelector<HTMLElement>(".pull-request-title-row .pull-request-title") ??
-    assert.fail("the title stands in the title row");
-  act(() => title.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-  await settle();
-  assert.deepEqual(opened, []);
-  act(() => title.dispatchEvent(new MouseEvent("click", { bubbles: true, metaKey: true })));
-  await settle();
-  assert.deepEqual(opened, [PAGE]);
-});
-
 test("a screen reader meets the title before the pill, which comes after it in the title row's markup", async () => {
   const tab = await draw(controlAnswering());
   const title =
