@@ -36,6 +36,9 @@ import {
 // SAFETY: a model a later build dropped, which the column's type no longer names, stored as an older build would have.
 const RETIRED_MODEL = "claude-retired-4-0" as typeof CHAPTERS_MODEL.HAIKU;
 
+/** Answers given in setup's survey, an Other with its words among them, as the survey keeps them on the account. */
+const ONBOARDING_SURVEY = '{"referral":"other","referralOther":"A meetup","role":"founder"}';
+
 /** A place midway through a team's setup, as setup keeps it on the account. */
 const SETUP_PLACE = '{"audience":"team","at":2,"team":"workspace-ada"}';
 
@@ -148,6 +151,7 @@ it.layer(getTestDB())("the account store's own-part choices and setup", (it) => 
         yield* writeAccountPreferences(userId, { soundWhen: SOUND_WHEN.BACKGROUND });
         yield* writeAccountPreferences(userId, { completionSound: COMPLETION_SOUND.QUACK });
         yield* writeAccountPreferences(userId, { turnNotifications: true });
+        yield* writeAccountPreferences(userId, { onboardingSurvey: ONBOARDING_SURVEY });
 
         yield* writeAccountPreferences(userId, { preferences: {} });
         const read = yield* readAccountPreferences(userId);
@@ -160,6 +164,7 @@ it.layer(getTestDB())("the account store's own-part choices and setup", (it) => 
           soundWhen: SOUND_WHEN.BACKGROUND,
           completionSound: COMPLETION_SOUND.QUACK,
           turnNotifications: true,
+          onboardingSurvey: ONBOARDING_SURVEY,
         });
         assert.deepEqual(
           (yield* readAccountPreferences(yield* openAccount))?.preferences,

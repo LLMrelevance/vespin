@@ -28,6 +28,7 @@ import { Clock, Effect, Layer, Option } from "effect";
 import { SqlClient } from "effect/sql";
 import { accountFastOffer } from "../agents/coder-host/agent-runtime-choice.js";
 import { HostedEnvironment, type HostedEnvironmentValues } from "../environment.js";
+import { recordingProductAnalytics } from "../events/server-events.js";
 import { HOSTED_API_ERROR, HOSTED_HTTP_STATUS } from "../http/http.js";
 import { modelCatalogOf } from "../providers/model-catalog.js";
 import { connectAgentApiKeys } from "../testing/agent-credentials.js";
@@ -89,6 +90,9 @@ const NO_ENVIRONMENT: HostedEnvironmentValues = {
   previewApiKeys: {},
 };
 
+/** What the procedures recorded for PostHog, across the file; a test reads its own account's. */
+const ANALYTICS = recordingProductAnalytics();
+
 interface Answer {
   readonly status: number;
   readonly body: WireBoundaryInput;
@@ -134,6 +138,7 @@ const answer = (procedures: ReturnType<typeof accountProcedures>, request: Reque
       modelCatalogOf([OPUS, OPUS_FAST, SOL]),
       // Only a delete asks Connect anything, and this suite deletes nothing.
       integrationConnectOf(() => CONNECTOR_ASKED_NOTHING),
+      ANALYTICS.layer,
     );
     const response = yield* hostedAnswer({ account: procedures }, services, request);
     const text = yield* Effect.promise(() => response.text());
@@ -305,6 +310,61 @@ it.layer(getTestDB())("the preferences snapshot's sound and notification parts",
       assert.equal(partOf(kept, "completionSound"), COMPLETION_SOUND.BELL);
       assert.equal(partOf(kept, "turnNotifications"), true);
     }),
+  );
+});
+
+it.layer(getTestDB())("the preferences snapshot's survey part", (it) => {
+  it.effect(
+    "keeps the account's answers with their words beside Other, records them for PostHog's onboarding survey once, keeps no key it does not name and no other account's, and refuses an answer no set offers or words beside no Other",
+    () =>
+      Effect.gen(function* () {
+        const { owner, other, ask } = yield* openAccounts;
+        const answers = '{"referral":"other","referralOther":"A meetup","role":"founder"}';
+        assert.equal(
+          partOf(yield* ask(request(owner, { onboardingSurvey: answers })), "onboardingSurvey"),
+          answers,
+        );
+        // Note that the same answers written again, as a retry or another machine's sync writes them, post nothing more, and a key the survey does not name is not kept.
+        const padded =
+          '{"referral":"other","referralOther":"A meetup","role":"founder","notes":"x"}';
+        assert.equal(
+          partOf(yield* ask(request(owner, { onboardingSurvey: padded })), "onboardingSurvey"),
+          answers,
+        );
+        assert.equal(partOf(yield* ask(request(other)), "onboardingSurvey"), undefined);
+
+        // Note that words beside no Other are refused as an answer no set offers is.
+        for (const refused of [
+          '{"referral":"a billboard"}',
+          '{"role":"founder","roleOther":"CEO"}',
+          '{"role":"other","roleOther":"  "}',
+        ]) {
+          assert.deepEqual(yield* ask(request(owner, { onboardingSurvey: refused })), {
+            status: HOSTED_HTTP_STATUS.BAD_REQUEST,
+            body: { error: HOSTED_API_ERROR.INVALID_REQUEST },
+          });
+        }
+        assert.equal(partOf(yield* ask(request(owner)), "onboardingSurvey"), answers);
+
+        // Note that the response keys are the ones the onboarding survey's Slack destination in PostHog reads.
+        const recorded = ANALYTICS.responses.filter((response) => response.userId === owner);
+        assert.deepEqual(
+          recorded.map((response) => [
+            response.surveyName,
+            response.answers.map((answer) => [answer.responseKey, answer.response]),
+          ]),
+          [
+            [
+              "Onboarding",
+              [
+                ["$survey_response_e1bfce32-292a-4a8c-a63c-751003d06501", "A meetup"],
+                ["$survey_response_977afcf0-6d7b-4b69-a758-3e8487161ea1", "Founder"],
+                ["$survey_response_b5f283ca-a870-4fc9-ae2a-a0b673b4fda0", undefined],
+              ],
+            ],
+          ],
+        );
+      }),
   );
 });
 

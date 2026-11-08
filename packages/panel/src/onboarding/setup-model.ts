@@ -3,7 +3,8 @@
  *
  * Setup stands once, in the window after sign-in, for a new account (see
  * `setupGate`), until it is finished. An account invited into a team's
- * workspace with no agent connected walks its Connect an agent step alone.
+ * workspace with no agent connected walks the survey and Connect an agent
+ * alone.
  */
 
 import { SETUP_AUDIENCE, type SetupAudience } from "@repo/settings";
@@ -11,6 +12,7 @@ import { SETUP_AUDIENCE, type SetupAudience } from "@repo/settings";
 /** Setup's steps, each a card of its own. */
 export const SETUP_STEP = {
   WELCOME: "welcome",
+  SURVEY: "survey",
   TEAM: "team",
   AGENT: "agent",
   GITHUB: "github",
@@ -29,15 +31,22 @@ export function setupSteps(audience: SetupAudience): readonly SetupStep[] {
     case SETUP_AUDIENCE.TEAM:
       return [
         SETUP_STEP.WELCOME,
+        SETUP_STEP.SURVEY,
         SETUP_STEP.TEAM,
         SETUP_STEP.AGENT,
         SETUP_STEP.GITHUB,
         SETUP_STEP.TOOLS,
       ];
     case SETUP_AUDIENCE.INVITED:
-      return [SETUP_STEP.AGENT];
+      return [SETUP_STEP.SURVEY, SETUP_STEP.AGENT];
     case SETUP_AUDIENCE.ME:
-      return [SETUP_STEP.WELCOME, SETUP_STEP.AGENT, SETUP_STEP.GITHUB, SETUP_STEP.TOOLS];
+      return [
+        SETUP_STEP.WELCOME,
+        SETUP_STEP.SURVEY,
+        SETUP_STEP.AGENT,
+        SETUP_STEP.GITHUB,
+        SETUP_STEP.TOOLS,
+      ];
   }
 }
 

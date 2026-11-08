@@ -181,6 +181,13 @@ on) shows it and may keep it in its notification history under its own
 settings, outside Vespin. Showing one sends nothing to us or anyone else. It is off until you
 turn it on. The notification that a command waits on your Mac, which the Mac
 app shows whatever this setting, names no command.
+### Setup questions
+
+If you answer the optional questions in setup (how you heard about Vespin,
+your role, and what you hope it helps with), we keep your answers, and
+anything you write beside "Other", with your account. We also record them in
+PostHog under your account's name and email, whether or not you share usage
+data, and post them to our team's Slack.
 
 ### Information stored on your Mac
 
@@ -248,11 +255,11 @@ data with:
   check for updates and load avatars.
 - **Infrastructure providers:** Vercel (hosting, agent sandboxes, and Vercel
   Connect, which holds integration tokens), Neon (database), PostHog (usage
-  data, screen recordings, and feedback), Sentry (error and performance
-  monitoring), Resend (email: for the onboarding emails a new account is sent,
+  data, screen recordings, feedback, and setup answers), Sentry (error and
+  performance monitoring), Resend (email: for the onboarding emails a new account is sent,
   Resend is told your email address, your first name, when you signed up, whether
   you accepted a workspace invitation, and on which days you started a task),
-  and Slack (feedback and Vespin's Slack bot).
+  and Slack (feedback, setup answers, and Vespin's Slack bot).
 - **Integrations and connected apps:** the services and MCP clients you connect
   receive what your agents send them, or what our tools answer, and keep it
   under their own policies.

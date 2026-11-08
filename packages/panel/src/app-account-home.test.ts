@@ -73,10 +73,12 @@ const ANTHROPIC_KEY: ProviderKeySummary = {
   statusAt: AT,
 };
 
-/** Grace signed in as a member of a team's workspace, with an agent connected or none yet. */
+/** Grace signed in as a member of a team's workspace, past setup's survey, with an agent connected or none yet. */
 function graceInvited(connected: boolean): AppStateSnapshot {
   return {
     ...GRACE,
+    // Note that the survey was skipped, as her account keeps the place it moved setup to.
+    settings: appSettingsWire(settingsView({ setupPlace: '{"audience":"invited","at":1}' })),
     tasks: {
       tasks: [],
       listStatus: TASKS_READ.READY,
@@ -169,7 +171,7 @@ test("signed out from Settings, a fresh account that finishes setup lands on Hom
   // Grace has walked setup to its last step, Connect your tools, and her account carries the place.
   const graceMidway: AppStateSnapshot = {
     ...GRACE,
-    settings: appSettingsWire(settingsView({ setupPlace: '{"audience":"me","at":3}' })),
+    settings: appSettingsWire(settingsView({ setupPlace: '{"audience":"me","at":4}' })),
   };
   // Note that the document is in the client before the window draws, as the root's `ensureQueryData` leaves it.
   await writeHandedAppState();
@@ -206,7 +208,7 @@ test("an account a team invited stays in setup once it connects an agent, until 
   await vi.waitFor(() => assert.equal(finishStands(), true));
   assert.equal(button("Finish").disabled, true, "Finish waits on an agent");
 
-  // Note that the agent connected is the only step an invited account walks, so nothing has moved its place.
+  // Note that connecting the agent moves no place, so setup stands on the step it stood on.
   await deliver(graceInvited(true), 4);
   await vi.waitFor(() => assert.equal(button("Finish").disabled, false));
   assert.ok(document.querySelector(".desktop-onboarding"), "setup stands");

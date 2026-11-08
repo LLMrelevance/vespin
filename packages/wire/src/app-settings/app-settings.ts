@@ -57,6 +57,7 @@ export const APP_SETTING_ID = {
   OPEN_NEW_TASK: "open_new_task",
   SETUP_FINISHED: "setup_finished",
   SETUP_PLACE: "setup_place",
+  ONBOARDING_SURVEY: "onboarding_survey",
   SOUND_WHEN: "sound_when",
   COMPLETION_SOUND: "completion_sound",
   TURN_NOTIFICATIONS: "turn_notifications",

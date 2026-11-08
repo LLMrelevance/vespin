@@ -2,11 +2,13 @@
 
 import assert from "node:assert/strict";
 import { WORKSPACE_ROLE, type Workspace } from "@repo/features/workspace-wire";
+import { SETTINGS_ACT_KIND } from "@repo/host/contract";
 import { appSettingsWire, settingsView } from "@repo/settings/testing";
+import { ACTION_RESULT_STATUS } from "@repo/wire";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, test, vi } from "vitest";
-import { fakeActPort } from "../testing/app-bridge.js";
+import { fakeActPort, refusedOnPort } from "../testing/app-bridge.js";
 import { stateWith } from "../testing/app-state.js";
 import { withQueryClient, writeAppState } from "../testing/copy-feedback.js";
 import { tasksControl } from "../testing/tasks-control.js";
@@ -15,7 +17,9 @@ import { SetupSteps } from "./setup-steps.js";
 /**
  * Setup's Welcome as the developer walks back to it: a team's workspace
  * made and then left for Just me lists the account's own workspace again,
- * so GitHub is not installed on the team's. Synthetic throughout.
+ * so GitHub is not installed on the team's. And its survey, kept on the
+ * account once for each set of answers setup goes on with. Synthetic
+ * throughout.
  */
 
 const ACCOUNT = "account-dana";
@@ -42,6 +46,25 @@ const roots: Root[] = [];
 beforeEach(() => {
   fakeActPort({});
 });
+
+/** Types `words` into `input` as a reader does, through the prototype's setter, which React reads a change by. */
+function typeInto(input: HTMLInputElement | null, words: string): void {
+  assert.ok(input, "the field is drawn");
+  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  act(() => {
+    setValue?.call(input, words);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+/** The button in `container` whose words start with `words`. */
+function buttonStarting(container: HTMLElement, words: string): HTMLButtonElement {
+  return (
+    [...container.querySelectorAll<HTMLButtonElement>("button")].find((each) =>
+      each.textContent?.startsWith(words),
+    ) ?? assert.fail(`no ${words} on ${container.textContent}`)
+  );
+}
 
 afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount());
@@ -75,11 +98,57 @@ test("Just me after a team's workspace was made lists the account's own workspac
     ),
   );
 
-  const justMe =
-    [...container.querySelectorAll<HTMLButtonElement>("button")].find((each) =>
-      each.textContent?.startsWith("Just me"),
-    ) ?? assert.fail(`no Just me on ${container.textContent}`);
-  act(() => justMe.click());
+  act(() => buttonStarting(container, "Just me").click());
 
   assert.deepEqual(chosen, [OWN.id]);
+});
+
+test("the survey keeps its answers on the account, Other's words among them, and again after a refusal", async () => {
+  // Setup stands at the survey, for the account alone, as the account keeps it.
+  const place = JSON.stringify({ audience: "me", at: 1 });
+  writeAppState(stateWith({}, { settings: appSettingsWire(settingsView({ setupPlace: place })) }));
+  const kept: unknown[] = [];
+  fakeActPort({
+    [SETTINGS_ACT_KIND.SETTING_UPDATE]: ({ field, value }) => {
+      if (field === "onboardingSurvey") {
+        kept.push(JSON.parse(String(value)));
+        // The account refuses the first keep, as a write lost to an outage is.
+        if (kept.length === 1) return Promise.reject(refusedOnPort("Not saved."));
+      }
+      const settings = appSettingsWire(settingsView({ setupPlace: place }));
+      return Promise.resolve({ status: ACTION_RESULT_STATUS.ACCEPTED, settings });
+    },
+  });
+  const base = tasksControl();
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+  roots.push(root);
+  act(() =>
+    root.render(
+      withQueryClient(
+        createElement(SetupSteps, {
+          tasks: { ...base, newTask: { ...base.newTask, workspaces: [OWN] } },
+          accountId: ACCOUNT,
+          onFinish: () => undefined,
+        }),
+      ),
+    ),
+  );
+
+  act(() => buttonStarting(container, "Other").click());
+  typeInto(container.querySelector<HTMLInputElement>('input[aria-label$="Other"]'), "  A meetup ");
+  act(() => buttonStarting(container, "Founder").click());
+  // Note that the account's place comes back from no write here, so Continue leaves setup at the survey to be pressed again.
+  const answers = { referral: "other", referralOther: "A meetup", role: "founder" };
+  act(() => buttonStarting(container, "Continue").click());
+  // Note that the write reaches the act port a tick after the press, and its refusal a tick after that, as a mutation's do.
+  await vi.waitFor(() => assert.deepEqual(kept, [answers]));
+  await act(() => Promise.resolve());
+  act(() => buttonStarting(container, "Continue").click());
+  await vi.waitFor(() => assert.deepEqual(kept, [answers, answers]));
+  await act(() => Promise.resolve());
+  act(() => buttonStarting(container, "Continue").click());
+  await act(() => Promise.resolve());
+
+  assert.deepEqual(kept, [answers, answers], "answers kept are not kept again");
 });

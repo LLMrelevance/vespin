@@ -57,6 +57,9 @@ import {
   accountPreferencesParts,
   experimentChoicesFrom,
   NO_EXPERIMENTS,
+  type OnboardingSurvey,
+  onboardingSurveyFrom,
+  onboardingSurveyStored,
   ownPreferenceFromWire,
 } from "@repo/settings";
 import type { UnparsedWireValue } from "@repo/wire";
@@ -86,6 +89,7 @@ import {
 } from "../providers/model-catalog.js";
 import { forgetPosthogPersonEffect } from "../providers/posthog.js";
 import { memoriesProcedures } from "./memories-procedures.js";
+import { onboardingSurveyAnswered } from "./onboarding-survey-response.js";
 import { providerKeysProcedures } from "./provider-keys-procedures.js";
 
 export interface AccountProcedureSeams {
@@ -217,6 +221,11 @@ const acceptedAgentChoice = /* @__PURE__ */ Effect.fnUntraced(function* (
   return accepted;
 });
 
+/** Whether two sets of the survey's answers answer every question alike, in the same words. */
+function sameSurvey(one: OnboardingSurvey | undefined, other: OnboardingSurvey): boolean {
+  return one !== undefined && onboardingSurveyStored(one) === onboardingSurveyStored(other);
+}
+
 /** The account resource: every procedure but the provider keys' own, which are `provider-keys-procedures.ts`'s. */
 export function accountProcedures(seams: AccountProcedureSeams) {
   const signedIn = hosted.account.use(accountMiddleware(seams.resolveUserId));
@@ -281,6 +290,7 @@ export function accountProcedures(seams: AccountProcedureSeams) {
      * finished setup, `setupPlace`, where it stands in setup, `soundWhen` and
      * `completionSound`, when and which sound plays as an agent finishes,
      * `turnNotifications`, whether a notification is posted then, `agent`, a choice the catalog
+     * `onboardingSurvey`, what it answered in setup's survey, `agent`, a choice the catalog
      * accepts, moved only to a model the account pays for, `chaptersModel`, one of the chapters' fixed set, and `experiments`, each experiment's on or off merged over
      * what stood — and answers the snapshot as it then stands. A body
      * carrying none of them asks for nothing and is refused.
@@ -298,6 +308,7 @@ export function accountProcedures(seams: AccountProcedureSeams) {
         body.soundWhen === undefined &&
         body.completionSound === undefined &&
         body.turnNotifications === undefined &&
+        body.onboardingSurvey === undefined &&
         body.agent === undefined &&
         body.chaptersModel === undefined &&
         body.experiments === undefined
@@ -358,6 +369,16 @@ export function accountProcedures(seams: AccountProcedureSeams) {
         }
         write.turnNotifications = turnNotifications;
       }
+      if (body.onboardingSurvey !== undefined) {
+        // Note that the answers are stored as read, so a key the survey does not name is not kept.
+        const onboardingSurvey = onboardingSurveyFrom(
+          ownPreferenceFromWire("onboardingSurvey", body.onboardingSurvey),
+        );
+        if (onboardingSurvey === undefined) {
+          return yield* Effect.fail(HOSTED_REFUSAL.INVALID_REQUEST);
+        }
+        write.onboardingSurvey = onboardingSurveyStored(onboardingSurvey);
+      }
       if (body.agent !== undefined) {
         write.agent = yield* acceptedAgentChoice(seams, context.userId, body.agent);
       }
@@ -373,7 +394,18 @@ export function accountProcedures(seams: AccountProcedureSeams) {
         write.experiments = experiments;
       }
 
+      // Note that the survey's answers standing before are read first, because a retried or synced write of the same answers must not post them to Slack again.
+      const answeredBefore =
+        write.onboardingSurvey === undefined
+          ? undefined
+          : (yield* hostedStoreOrUnavailable(seams.readPreferences(context.userId)))?.preferences
+              ?.onboardingSurvey;
       const row = yield* hostedStoreOrUnavailable(seams.writePreferences(context.userId, write));
+      // The survey's answers, once kept and changed, are recorded as a response to our onboarding survey.
+      const answered = onboardingSurveyFrom(write.onboardingSurvey);
+      if (answered !== undefined && !sameSurvey(onboardingSurveyFrom(answeredBefore), answered)) {
+        yield* onboardingSurveyAnswered(context.userId, answered);
+      }
       return { ...snapshotAnswer(row, yield* snapshotAgent(context.userId, row)), txid: row.txid };
     }),
 

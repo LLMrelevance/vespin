@@ -88,6 +88,7 @@ test("the snapshot's preferences part carries only the keys v0.18.0 reads, whate
     soundWhen: SOUND_WHEN.BACKGROUND,
     completionSound: COMPLETION_SOUND.QUACK,
     turnNotifications: true,
+    onboardingSurvey: '{"referral":"other","referralOther":"A meetup","role":"founder"}',
   } satisfies Required<AccountPreferences>;
   const shared = Object.keys(accountPreferencesParts(everything).preferences);
   assert.deepEqual(

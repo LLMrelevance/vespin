@@ -53,6 +53,24 @@ export {
   type MacCommandMode,
 } from "./mac-commands.js";
 export {
+  isOnboardingSurveyJson,
+  type OnboardingSurvey,
+  onboardingSurveyFrom,
+  onboardingSurveyStored,
+  SURVEY_INTENT,
+  SURVEY_INTENT_LABEL,
+  SURVEY_OTHER,
+  SURVEY_OTHER_MAX_CHARS,
+  SURVEY_QUESTION,
+  SURVEY_REFERRAL,
+  SURVEY_REFERRAL_LABEL,
+  SURVEY_ROLE,
+  SURVEY_ROLE_LABEL,
+  type SurveyIntent,
+  type SurveyReferral,
+  type SurveyRole,
+} from "./onboarding-survey.js";
+export {
   APP_SETTING_ID,
   APP_SETTING_SCHEMA,
   DIFF_SETTING_GROUPS,
