@@ -6,8 +6,9 @@ import {
 } from "@repo/credentials/snapshot";
 import { INTEGRATION_PROVIDER } from "@repo/features/integration-wire";
 import { FAILURE_SURFACE } from "@repo/features/shown-failure";
-import { IRREVERSIBLE_WORDS, VERB } from "@repo/features/words";
-import { ACT_KIND } from "@repo/host/acts";
+import { andList, IRREVERSIBLE_WORDS, VERB } from "@repo/features/words";
+import { WORKSPACE_ROLE, type Workspace } from "@repo/features/workspace-wire";
+import { ACCOUNT_DELETE_SESSION_EXPIRED_REFUSAL, ACT_KIND } from "@repo/host/acts";
 import { SETTINGS_SEARCH_ROW, searchAnchorProps } from "@repo/settings/settings-anchors";
 import {
   BUTTON_VARIANT,
@@ -145,12 +146,56 @@ const ACCOUNT_DELETE_MUTATION = mutationOptions({
   mutationFn: (): Promise<ActionResult> =>
     sendAct(ACT_KIND.ACCOUNT_DELETE, undefined).then(
       () => ({ status: ACTION_RESULT_STATUS.ACCEPTED }),
-      () => ({
+      (error: unknown) => ({
         status: ACTION_RESULT_STATUS.REJECTED,
-        reason: "The account could not be deleted. Try again.",
+        reason: deleteRefusalWords(error),
       }),
     ),
 });
+
+/**
+ * What a refused delete tells the person to do. Note that Better Auth
+ * deletes an account only within a day of its sign-in, and the host refuses
+ * a delete past that in its own sentence
+ * (`ACCOUNT_DELETE_SESSION_EXPIRED_REFUSAL`), which a retry alone never gets
+ * past, so only that refusal says to sign in again; anything else, such as a
+ * service that did not answer, says to try again.
+ */
+function deleteRefusalWords(error: unknown): string {
+  return error instanceof Error && error.message === ACCOUNT_DELETE_SESSION_EXPIRED_REFUSAL
+    ? "The account could not be deleted. Sign out and back in, then delete it again."
+    : "The account could not be deleted. Try again.";
+}
+
+/**
+ * The workspaces deleting the account deletes with it, as the list it was
+ * handed reads them: the ones the account owns and is the only member of,
+ * as Better Auth deletes them (`auth-policy.ts`'s `accountDeletion`). Note
+ * that a list from a service before member counts names none.
+ */
+function deletedWorkspaces(workspaces: readonly Workspace[]): readonly string[] {
+  return workspaces
+    .filter(({ role, memberCount }) => role === WORKSPACE_ROLE.OWNER && memberCount === 1)
+    .map(({ name }) => name);
+}
+
+/**
+ * What the question adds after its warning about the workspaces that go
+ * with the account: their names where the list is read whole, and nothing
+ * where it names none; while it is unread, or its read failed, the rule
+ * itself, since a question saying nothing then would read as though
+ * nothing else goes.
+ */
+function deletedWorkspacesWords(
+  workspaces: readonly Workspace[] | undefined,
+  listKnown: boolean,
+): string | undefined {
+  if (workspaces === undefined || !listKnown) {
+    return "Workspaces you own and are the only member of are also deleted, with everything in them.";
+  }
+  const names = deletedWorkspaces(workspaces);
+  return names.length > 0 ? `Also deleted, with everything in them: ${andList(names)}.` : undefined;
+}
 
 /**
  * Who is signed in, the member's own GitHub personal access token, and the
@@ -158,16 +203,27 @@ const ACCOUNT_DELETE_MUTATION = mutationOptions({
  * opens on, and the one place either way out is offered. Sign out acts on
  * the press, since nothing is lost: the host asks first where a call or
  * unsaved words would go. Deleting asks first in the confirm dialog, since it
- * erases the account at the service for good, and a refusal to delete is said
- * in it.
+ * erases the account at the service for good, naming the workspaces that go
+ * with it, and a refusal to delete is said in it.
  */
 export function AccountSection({
   account,
+  workspaces,
+  workspacesRead = false,
+  listFailed = false,
   onSignOut,
 }: {
   account: Extract<AccountSnapshot, { status: typeof ACCOUNT_STATUS.SIGNED_IN }>;
+  /** The account's workspaces as the Workspace page lists them. */
+  workspaces?: readonly Workspace[] | undefined;
+  /** Whether the workspaces have been read. */
+  workspacesRead?: boolean;
+  /** Whether the read the workspaces arrive with failed, so the list may not be whole. */
+  listFailed?: boolean;
   onSignOut: () => Promise<void>;
 }): React.JSX.Element {
+  const listKnown = workspacesRead && !listFailed;
+  const goneWith = deletedWorkspacesWords(workspaces, listKnown);
   const signOut = useBusyPress(() => signOutSayingFailure(onSignOut));
   // Note that the section is only drawn while its page is, so the page
   // leaving takes the question with it.
@@ -246,12 +302,14 @@ export function AccountSection({
         gate={account.email}
         question={{
           title: `Delete the account ${account.email}?`,
-          body: IRREVERSIBLE_WORDS,
+          body: goneWith === undefined ? IRREVERSIBLE_WORDS : `${IRREVERSIBLE_WORDS} ${goneWith}`,
           verb: "Delete account",
           running: "Deleting account",
           loss: CONFIRM_LOSS.IRREVERSIBLE,
           replayUnmasked: true,
           titleReplayMasked: true,
+          // Note that the workspaces' names are a person's words, so the body is masked once it names any.
+          bodyReplayMasked: listKnown && goneWith !== undefined,
         }}
       />
     </SettingsSection>
