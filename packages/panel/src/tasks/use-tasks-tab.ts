@@ -1277,7 +1277,7 @@ export function useTasksTab(input: {
   onOpenApiKeys: AgentsControl["onOpenApiKeys"];
   /** Opens Settings at the place the link names. */
   onOpenSettings: (link: SettingsLink) => void;
-  /** The window's ask before leaving unsaved work, which every door here that changes the window's state before it navigates still asks through up front. */
+  /** The window's ask before leaving unsaved work, which every door here moves the window through first (`arrive`). */
   placeLeave: PlaceLeave;
   /** The room the panel's stage gives, which holds the side panel only full screen while it is narrow (`shell-room.ts`). */
   room: ShellRoom;
@@ -1299,7 +1299,6 @@ export function useTasksTab(input: {
   visitTask: (at: TaskAt, step: LinkStep) => boolean;
 }): TasksControl {
   const { shown, placeLeave } = input;
-  const leaveFirst = placeLeave.transitionalLeaveFirst;
   // Note that the reads below stay on `act` until they move to queries; every write is a mutation, and
   // none invalidates a query, since what each changes comes back through app state.
   const queryClient = useQueryClient();
@@ -2270,21 +2269,28 @@ export function useTasksTab(input: {
   const homeOpen = input.homeView.open;
   const homeNow = useRef({ home: input.homeView, boundFor });
   homeNow.current = { home: input.homeView, boundFor };
-  // Note that a fixture run binds its task for good, so leaving it stands that task's own place, as it always has.
-  const leaveTask = useCallback(() => {
+  // Leaving the open task's move, answering whether the window moved: Home opened from anywhere else, or, since a fixture
+  // run binds its task for good, that task's own place stood, as it always has.
+  const leaveMove = useCallback((): boolean => {
     const now = homeNow.current;
-    if (fixture !== undefined && now.boundFor !== undefined) standTask.current(now.boundFor);
-    else if (!now.home.open) now.home.onOpen();
-    else if (now.boundFor !== undefined) unbindTask();
-  }, [fixture, unbindTask]);
+    if (fixture !== undefined && now.boundFor !== undefined) return standTask.current(now.boundFor);
+    if (now.home.open) return false;
+    now.home.onOpen();
+    return true;
+  }, [fixture]);
+  const leaveTask = useCallback(() => {
+    const bound = homeNow.current.boundFor;
+    if (!leaveMove() && fixture === undefined && bound !== undefined) unbindTask();
+  }, [fixture, leaveMove, unbindTask]);
   // A workspace chosen on purpose, from the switcher, a workspace made, or
   // one left, is listed at once, and the task on screen follows: the task
   // last open there opens again, where it is still that workspace's, or
   // else the home page, so the task on screen is the listed
   // workspace's. A remembered task that would not open gives way to the home
-  // page, unless the developer went somewhere else meanwhile.
+  // page, unless the developer went somewhere else meanwhile. Note that a
+  // switch whose move `left` the open task already leaves it no second time.
   const switchWorkspace = useCallback(
-    (workspaceId: string) => {
+    (workspaceId: string, left = false) => {
       navigations.current += 1;
       const mine = navigations.current;
       chooseListed(workspaceId);
@@ -2292,7 +2298,7 @@ export function useTasksTab(input: {
       const last = lastOpenIn.current.get(workspaceId);
       const reopens = tasksNow.some((task) => task.id === last && task.workspaceId === workspaceId);
       if (last === undefined || !reopens) {
-        leaveTask();
+        if (!left) leaveTask();
         return;
       }
       openTask(
@@ -2305,6 +2311,38 @@ export function useTasksTab(input: {
     },
     [chooseListed, openWorkspaceId, tasksNow, openTask, leaveTask],
   );
+  // A switch's own move, as a page holding unsaved work holds it, answering whether it left the open task: off another
+  // workspace's open task, to the task last open in `workspaceId` or Home, as the switch goes; else, or where that moves
+  // nothing, the place standing turned under it, as listing it turns the Board, Automations, the Inbox, and Home.
+  const switchMove = (workspaceId: string): boolean => {
+    if (openWorkspaceId !== undefined && openWorkspaceId !== workspaceId) {
+      const last = lastOpenIn.current.get(workspaceId);
+      const reopens = tasksNow.some((task) => task.id === last && task.workspaceId === workspaceId);
+      if (last === undefined || !reopens) {
+        if (leaveMove()) return true;
+      } else if (standTaskPlace(last)) return false;
+    }
+    const target = workspacesNow.find((each) => each.id === workspaceId);
+    if (target === undefined) return false;
+    const step = stepOf(target);
+    if (routedBoard.open) turnBoard(step);
+    else if (routedAutomations.standingIn !== undefined) turnAutomations(step);
+    else if (routedInbox.standingIn !== undefined) turnInbox(step);
+    else if (input.homeView.open && boundFor === undefined) turnHome(step);
+    return false;
+  };
+  // A workspace chosen on purpose moves first and lists it once the move lands, so a switch kept at a page's leave ask
+  // lists nothing (`places/place-leave.ts`'s `arrive`). Note that a switch nothing holds is the switch as it always was,
+  // listing first, whose arrival the place's own turn and the task's open follow.
+  const chooseWorkspace = (workspaceId: string) => {
+    let left = false;
+    placeLeave.arrive(
+      (free) => {
+        if (!free) left = switchMove(workspaceId);
+      },
+      () => switchWorkspace(workspaceId, left),
+    );
+  };
   // What the window lists and shows now, which a switch toast's Back reads
   // as it is pressed rather than as the toast was raised.
   const standingNow = useRef({ listed: listedId, open: openTaskId });
@@ -2994,6 +3032,12 @@ export function useTasksTab(input: {
       }
     };
   };
+  // A link's move to the own place of `taskId`, from whatever stands. Note that one the window holds no address for yet,
+  // from a place beside the task's place, moves nowhere and leaves that place standing once the task opens under it, so
+  // its Leave leaves no page and the page's ask stands on (`places/place-leave.ts`'s `stays`).
+  const standLinkedTask = (taskId: string) => {
+    if (!standTaskPlace(taskId, true) && !opensTaskPlace) placeLeave.stays();
+  };
   // A move as `placeLeave.arrive` makes it, which lands what the link opening now does as well.
   const linkArrive = (move: (free: boolean) => void, landed: () => void) => {
     const also = takeLinkLanded();
@@ -3279,8 +3323,13 @@ export function useTasksTab(input: {
       readonly workspace?: string;
     },
   ) => {
+    // Note that with Descriptions off its task's own place stands first, out from whatever stands, and opens on its
+    // Overview once it lands, as a task's link does.
     if (!descriptionsOnFor(taskId, opening.workspace)) {
-      showOverview({ kind: LINK_PLACE.TASK, planId: taskId });
+      linkArrive(
+        () => standLinkedTask(taskId),
+        () => showOverview({ kind: LINK_PLACE.TASK, planId: taskId }),
+      );
       return;
     }
     const address = versionHistoryAddressOf(
@@ -3777,8 +3826,8 @@ export function useTasksTab(input: {
   const linkOnTask = (step: LinkStep, open: () => void) =>
     linkArrive(
       (free) => {
-        if (free) linkingTo(step, () => standTaskPlace(step.taskId, true));
-        else standTaskPlace(step.taskId, true);
+        if (free) linkingTo(step, () => standLinkedTask(step.taskId));
+        else standLinkedTask(step.taskId);
       },
       () => linkingTo(step, open),
     );
@@ -3869,7 +3918,7 @@ export function useTasksTab(input: {
         if (place.kind !== LINK_PLACE.TASK) return;
         const taskId = place.planId;
         linkArrive(
-          () => standTaskPlace(taskId, true),
+          () => standLinkedTask(taskId),
           () => showMention({ kind: MENTION_KIND.TASK, taskId }),
         );
         return;
@@ -4246,11 +4295,12 @@ export function useTasksTab(input: {
     // A failed read is taken as stale, so the refresh reads the workspaces again at once.
     onRetryWorkspaces: () => refreshTasks(),
     workspace: listedWorkspace,
-    onChooseWorkspace: leaveFirst(switchWorkspace),
+    onChooseWorkspace: chooseWorkspace,
     newWorkspace: {
       open: signedIn && founding !== undefined && founding.accountId === input.accountId,
-      // Note that the cards take the window in the page's place, so a page holding unsaved work asks first, as leaving it does.
-      onOpen: leaveFirst(() => setFounding({ accountId: input.accountId })),
+      // Note that the cards take the window in the page's place with no address of their own, so a page holding unsaved
+      // work asks first inside `arrive`, as leaving it does, and they open once Leave is pressed.
+      onOpen: () => placeLeave.arrive(NOTHING, () => setFounding({ accountId: input.accountId })),
       onClose: () => setFounding(undefined),
     },
     onOpenWorkspaceSettings: () =>
