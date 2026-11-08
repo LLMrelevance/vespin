@@ -73,6 +73,7 @@ import {
 } from "effect";
 import { SqlClient, SqlSchema } from "effect/sql";
 import { Database, type DatabaseServices, queryBuilder, type StoreFailure } from "../core/query.js";
+import { CURRENT_TXID } from "../core/txid.js";
 import { conversations, messages, turnlessUserLine, turns } from "../schemas/storage.js";
 import { CONVERSATION_KIND, MESSAGE_SENDER, messageSenderSchema } from "../storage-vocabulary.js";
 import { LOST_TURNS } from "./abandoned-turns.js";
@@ -636,9 +637,6 @@ const RowIdSchema = Schema.Struct({ id: Schema.String });
 
 /** A message row as its insert answers it: its id, and the transaction that wrote it, which Neon Realtime names the change by. */
 const InsertedRowSchema = Schema.Struct({ id: Schema.String, txid: Schema.String });
-
-/** The id of the transaction a statement runs in, read in its own `RETURNING`, as a decimal string so its 64 bits stay exact. */
-const CURRENT_TXID = sql<string>`pg_current_xact_id()::text`;
 
 /**
  * The `jsonb` field a stored spoken line is told apart by, which the builder
