@@ -48,7 +48,9 @@ import { appStateQuery, selectCapability, selectPortForwarding } from "../use-ap
  * the Mac's port differs ("from :3000"). Under them, a port may be shared
  * by a public link (`PORT_SHARE_SET`): one row per port, "Share :3000",
  * and while one is shared, its link, which opens it, Copy, and Stop
- * sharing, as the host keeps the link beside the ports. Every word drawn
+ * sharing, as the host keeps the link beside the ports. The switch, a
+ * setting, leaves the menu standing as every menu's switch does, so the
+ * ports appear under it; every other row is an action and closes it. Every word drawn
  * but the link is the app's own, port numbers among them, so a screen
  * recording shows them as they read.
  */
@@ -226,6 +228,7 @@ export function ForwardChip({
         icon: <PlugIcon aria-hidden="true" />,
         checked: answer.on,
         mark: MENU_ITEM_MARK.SWITCH,
+        stays: true,
         onSelect: () => setForwarding(agent.id, !answer.on),
       },
     ],
