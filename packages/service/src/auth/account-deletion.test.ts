@@ -5,6 +5,11 @@ import {
   GITHUB_ACCOUNT_TYPE,
   GITHUB_INSTALLATION_STATUS,
 } from "@repo/database/github-installation-vocabulary";
+import {
+  deviceAgentLinesWaiting,
+  queueDeviceAgentLine,
+} from "@repo/database/models/device-agent-store";
+import { registerDevice } from "@repo/database/models/device-store";
 import { workspaceSeams } from "@repo/database/models/workspace-seams";
 import { agentTable } from "@repo/database/schemas/agent";
 import {
@@ -16,12 +21,19 @@ import {
 import { automation } from "@repo/database/schemas/automation";
 import { githubInstallation } from "@repo/database/schemas/github-installation";
 import { conversations } from "@repo/database/schemas/storage";
-import { openMigratedPglite, openTaskAgent, sqlClientOverPglite } from "@repo/database/testing";
+import {
+  DEVICE_LAYOUT,
+  openMigratedPglite,
+  openTaskAgent,
+  sqlClientOverPglite,
+} from "@repo/database/testing";
+import { AGENT_MACHINE } from "@repo/features/agent-wire";
 import {
   AUTOMATION_ACTION,
   AUTOMATION_DEFAULT_GUARDS,
   AUTOMATION_TRIGGER,
 } from "@repo/features/automation-wire";
+import { DEVICE_AGENT_LINE_KIND, DEVICE_CAPABILITY } from "@repo/features/device-agent-wire";
 import { memorySandbox } from "@repo/sandbox/testing";
 import { HTTP_METHOD } from "@repo/wire";
 import { jsonResponse, recordingHttpClient } from "@repo/wire/testing";
@@ -29,7 +41,7 @@ import { betterAuth } from "better-auth";
 import { organization } from "better-auth/plugins";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
-import { ConfigProvider, Effect, Layer, Schema } from "effect";
+import { ConfigProvider, Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter } from "effect/http";
 import { SqlClient } from "effect/sql";
 import { accountDeletionSteps, workspaceDeletionSteps } from "../accounts/deletion-hooks.js";
@@ -167,7 +179,7 @@ const openAuthRoute = (client: Awaited<ReturnType<typeof openMigratedPglite>>) =
     return { auth, post, signUp, sandboxes, forgotten, resend };
   });
 
-/** A workspace of Ada's alone, holding a GitHub connection, an agent a member who has since left ran in a sandbox on a repository whose base drive a fill is still filling, and that member's scheduled automation, and one she shares with Grace, holding her own scheduled automation. */
+/** A workspace of Ada's alone, holding a GitHub connection, an agent a member who has since left ran in a sandbox on a repository whose base drive a fill is still filling, another of that member's on her Mac in the same repository with a stop line waiting, and that member's scheduled automation, and one she shares with Grace, holding her own scheduled automation. */
 const openWorkspaces = (
   route: Effect.Success<ReturnType<typeof openAuthRoute>>,
   ada: string,
@@ -219,6 +231,27 @@ const openWorkspaces = (
     const baseDrive = baseDriveName({ workspaceId: solo.id, fullName: "acme/relay" });
     route.sandboxes.state.drives.set(baseDrive, { name: baseDrive, forkedFrom: undefined });
     route.sandboxes.stand({ name: baseDrive, drive: { name: baseDrive, at: BASE_DRIVE.MOUNT } });
+    const mac = "00000000-0000-4000-8000-00000000000a";
+    yield* registerDevice(grace, {
+      id: mac,
+      name: "Studio",
+      ...DEVICE_LAYOUT,
+      capabilities: [DEVICE_CAPABILITY.DISCARD],
+    });
+    const local = yield* openTaskAgent(grace, solo.id, null);
+    yield* db
+      .update(agentTable)
+      .set({ machine: AGENT_MACHINE.DEVICE, deviceId: mac, repository: "acme/relay" })
+      .where(eq(agentTable.id, local));
+    assert.ok(
+      Option.isSome(
+        yield* queueDeviceAgentLine(grace, {
+          agentId: local,
+          kind: DEVICE_AGENT_LINE_KIND.STOP,
+          payload: {},
+        }),
+      ),
+    );
     const [scheduled] = yield* db
       .insert(automation)
       .values({
@@ -252,13 +285,15 @@ const openWorkspaces = (
       shared: shared.id,
       leftBehind: agent.conversationId,
       baseDrive,
+      mac,
+      local,
       schedule: scheduled.id,
       sharedSchedule: sharedScheduled.id,
     };
   });
 
 it.effect(
-  "deleting an account at Better Auth's endpoint deletes the workspace it alone belongs to, with its GitHub connection, deletes the agents' conversations and sandboxes it left, its repositories' base drives, and its automations' schedules, and leaves a workspace others share, forgetting the account's own schedule there",
+  "deleting an account at Better Auth's endpoint deletes the workspace it alone belongs to, with its GitHub connection, deletes the agents' conversations and sandboxes it left, its repositories' base drives, and its automations' schedules, tells a local agent's Mac to discard it in place of its waiting lines, and leaves a workspace others share, forgetting the account's own schedule there",
   () =>
     Effect.gen(function* () {
       const client = yield* Effect.acquireRelease(Effect.promise(openMigratedPglite), (opened) =>
@@ -269,11 +304,8 @@ it.effect(
         const route = yield* openAuthRoute(client);
         const ada = yield* route.signUp("ada");
         const grace = yield* route.signUp("grace");
-        const { shared, leftBehind, baseDrive, schedule, sharedSchedule } = yield* openWorkspaces(
-          route,
-          ada.id,
-          grace.id,
-        );
+        const { shared, leftBehind, baseDrive, mac, local, schedule, sharedSchedule } =
+          yield* openWorkspaces(route, ada.id, grace.id);
 
         const deleted = yield* route.post("delete-user", {}, ada.cookie);
 
@@ -297,6 +329,14 @@ it.effect(
         );
         assert.deepEqual(route.sandboxes.state.deleted.toSorted(), [baseDrive, "sandbox-of-grace"]);
         assert.deepEqual(route.sandboxes.state.deletedDrives, [baseDrive]);
+        // The agent's row is gone with the workspace, so its Mac reads the discard alone, not the stop queued before.
+        assert.deepEqual(
+          (yield* deviceAgentLinesWaiting(grace.id, mac)).map(({ agentId, kind }) => ({
+            agentId,
+            kind,
+          })),
+          [{ agentId: local, kind: DEVICE_AGENT_LINE_KIND.DISCARD }],
+        );
         // The solo workspace's schedule goes with it, then Ada's own in the shared one with her account.
         assert.deepEqual(route.forgotten, [schedule, sharedSchedule]);
         const contactDeletes = route.resend.requests

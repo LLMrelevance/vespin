@@ -10,9 +10,11 @@
  * sandboxes are deleted with the drives they own, as an archive deletes
  * them (`session-sandboxes.ts`'s `deletedWithWorkspace`), past the answer,
  * and so is the base drive of each repository its agents started in
- * (`base-drive.ts`), which no agent owns; and each scheduled automation's
- * schedule is deleted at Vercel, as deleting the automation does
- * (`automation-writes.ts`'s
+ * (`base-drive.ts`), which no agent owns; each local agent's device is told
+ * to stop its runner and remove its folder, as an archive tells it
+ * (`device-discard.ts`'s `discardedWithWorkspace`), by a line that outlives
+ * the agent's row; and each scheduled automation's schedule is deleted at
+ * Vercel, as deleting the automation does (`automation-writes.ts`'s
  * `removeAutomationAs`), since nothing else would stop it firing. Nothing
  * is deleted before the workspace, because a delete refused after that
  * would leave a standing workspace's agents with their transcripts gone,
@@ -24,6 +26,7 @@ import { deleteConversations } from "@repo/database/models/conversation-delete";
 import { workspaceAgentConversations } from "@repo/database/models/workspace-store";
 import { Effect } from "effect";
 import { baseDriveName } from "../agents/base-drive.js";
+import { discardedWithWorkspace } from "../agents/device-discard.js";
 import { deletedWithWorkspace, deploymentSandboxDeletes } from "../agents/session-sandboxes.js";
 import { schedulesForgotten } from "../automations/automation-cadence.js";
 
@@ -34,6 +37,12 @@ export interface WorkspaceDeletionPending {
   readonly sessionIds: readonly string[];
   /** The base drives of the repositories the workspace's agents started in, by name, each deleted where it stands. */
   readonly baseDrives: readonly string[];
+  /** The local agents, each by the device it was pinned to, which is told to discard it. */
+  readonly devices: readonly {
+    readonly userId: string;
+    readonly agentId: string;
+    readonly deviceId: string;
+  }[];
   /** The scheduled automations, named as their schedules are kept at Vercel. */
   readonly schedules: readonly { readonly id: string; readonly organizationId: string }[];
 }
@@ -56,6 +65,9 @@ export const beforeWorkspaceDeletion = /* @__PURE__ */ Effect.fn("web/beforeWork
           ),
         ),
       ],
+      devices: agents.flatMap(({ userId, agentId, deviceId }) =>
+        deviceId === null ? [] : [{ userId, agentId, deviceId }],
+      ),
       schedules,
     } satisfies WorkspaceDeletionPending;
   },
@@ -73,6 +85,7 @@ export const afterWorkspaceDeletion = /* @__PURE__ */ Effect.fn("web/afterWorksp
       ),
     );
     yield* deletedWithWorkspace(deploymentSandboxDeletes, pending.sessionIds, pending.baseDrives);
+    yield* discardedWithWorkspace(pending.devices);
     yield* schedulesForgotten(pending.schedules);
   },
 );
