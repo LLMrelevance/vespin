@@ -23,25 +23,24 @@ import { recordNativeHanded } from "@repo/database/models/agent-store";
 import { acceptRunnerLine } from "@repo/database/models/runner-line-store";
 import { agentTable } from "@repo/database/schemas/agent";
 import { runnerLine } from "@repo/database/schemas/runner-line";
-import type { NetworkPolicy } from "@repo/sandbox";
 import {
   commandAnswered,
   commandLogsStreamed,
   commandRunStreamed,
   sandboxDeleted,
   sandboxesListed,
-  sandboxFetchOver,
   sandboxFound,
   sandboxListRefusal,
   sandboxStopRefusal,
   sandboxTagsRefusal,
   sessionAnswered,
   snapshotOf,
-} from "@repo/sandbox/testing";
+  vercelSandboxOver,
+} from "@repo/sandbox/vercel/testing";
 import { fakeHttpClientLayer } from "@repo/wire/testing";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { Effect, Layer, Option } from "effect";
-import { agentTag } from "../agents/machine/vercel-machine.js";
+import { agentTag } from "../agents/machine/sandbox-machine.js";
 
 const TEAM = "team_fixture";
 const PROJECT = "prj_fixture";
@@ -532,7 +531,7 @@ export function runnerSandboxApi() {
           .slice(0, command.policiesBefore)
           .findLast((each) => each.session === command.sandboxSessionId)?.policy;
   return {
-    layer: Layer.merge(fakeHttpClientLayer(respond), sandboxFetchOver(respond)),
+    layer: Layer.provideMerge(vercelSandboxOver(respond), fakeHttpClientLayer(respond)),
     respond,
     policyAtStart,
     sandboxes,
@@ -610,6 +609,26 @@ export const runnerTook = (agentId: string) =>
       .where(and(eq(runnerLine.agentId, agentId), isNull(runnerLine.acceptedAt)));
   });
 
+/** A network policy as Vercel's API is sent one: the open internet by name, or each host's matchers and transforms. */
+type SentPolicy =
+  | string
+  | {
+      readonly allow: Readonly<
+        Record<
+          string,
+          readonly {
+            readonly match?: {
+              readonly headers?: readonly {
+                readonly key: { readonly exact: string };
+                readonly value: { readonly exact: string };
+              }[];
+            };
+            readonly transform: readonly { readonly headers: Readonly<Record<string, string>> }[];
+          }[]
+        >
+      >;
+    };
+
 /**
  * The bearer a network policy swaps in on the host given for a request that
  * presents the placeholder as its bearer, as the firewall would set it on
@@ -620,9 +639,9 @@ export function swappedBearer(
   host: string,
   placeholder: string | undefined,
 ): string | undefined {
-  // SAFETY: the policy is the body the API was sent, a `NetworkPolicy` as `updateNetworkPolicy` spells it.
-  const sent = policy as NetworkPolicy | undefined;
-  if (sent === undefined || !("allow" in sent) || placeholder === undefined) return undefined;
+  // SAFETY: the policy is the body the API was sent, Vercel's network policy as the adapter spells it.
+  const sent = policy as SentPolicy | undefined;
+  if (sent === undefined || typeof sent === "string" || placeholder === undefined) return undefined;
   const swap = (sent.allow[host] ?? []).find((rule) =>
     (rule.match?.headers ?? []).some(
       (header) =>
