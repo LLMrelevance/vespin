@@ -29,6 +29,7 @@ export type {
   TerminalSocketArrival,
   TerminalSocketOpening,
 } from "../relay-socket.js";
+export { type ConnectWebSocket, openTerminalSocketOver } from "../web-socket-terminal.js";
 export { layersInOrder } from "./composer.js";
 export { HostAssemblyTag, HostTag, hostStandingLayer } from "./host.js";
 export { hostKernelLayer } from "./kernel.js";
