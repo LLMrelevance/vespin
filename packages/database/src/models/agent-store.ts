@@ -1791,7 +1791,7 @@ export const PublishedColumnSchema = Schema.Struct({
 });
 
 /** The `published_read` column (`StoredPublishedRead`). */
-export const PublishedReadColumnSchema = Schema.Struct({
+const PublishedReadColumnSchema = Schema.Struct({
   at: Schema.Number,
   branch: Schema.NullOr(Schema.String),
   pushed: Schema.Boolean,
