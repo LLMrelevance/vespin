@@ -44,7 +44,6 @@ import {
   PLAIN_PRESS,
   ProviderMark,
   RESIZE_EDGE_SIDE,
-  RepositoryName,
   RepositoryPicture,
   ResizeEdge,
   type ResizeEdgeHandle,
@@ -86,8 +85,6 @@ import {
   ASSIGNED_TO,
   type AssignedTo,
   agentRow,
-  type ChildTaskCount,
-  childTaskCounts,
   type DrawnTaskRow,
   drawnTaskRows,
   homedTaskRows,
@@ -207,7 +204,7 @@ import {
   tasksHeadWords,
   useTaskViewCommands,
 } from "./sidebar-task-view.js";
-import { type RowFaces, SidebarTask } from "./task-actions.js";
+import { SidebarTask } from "./task-actions.js";
 import { useTaskListView } from "./task-list-view.js";
 import { ChosenTasksContext, useTasksSelection } from "./tasks-selection.js";
 import { useWorkspaceRuns } from "./use-automation-runs.js";
@@ -414,8 +411,6 @@ interface RowContext {
   readonly unseenAgent: (agentId: string) => boolean;
   /** The time each row's last update is counted back from. */
   readonly now: number;
-  /** Which faces a task's row may wear: no assignee's while the list holds those assigned to one member. */
-  readonly faces: RowFaces;
   /** Whether the sidebar is in sight: folded away, nothing it opened stands over the window. */
   readonly inSight: boolean;
   /** Hears a row let go over a section, Tasks, or Pinned, while the account keeps sections; none while it does not. */
@@ -424,8 +419,6 @@ interface RowContext {
   readonly onCarried: (carried: boolean) => void;
   /** An agent's Move to section, as a task's menu offers it; none for an archived agent. */
   readonly sectionEntry: (agent: TasklessAgent) => MenuEntry | undefined;
-  /** How many of a task's child tasks are finished, of all of them, which its row says; none for a task with none. */
-  readonly childCount: (taskId: string) => ChildTaskCount | undefined;
   /** Whether a task's child tasks stand open under its row, folded until first opened. */
   readonly opened: (taskId: string) => boolean;
   /** Every listed task by its id, through which a child task under a parent the view hides is walked to the ancestor it stands under (`homedTaskRows`). */
@@ -467,9 +460,7 @@ function LeavingGroups<G>({
 
 /**
  * One group's rows, each a plan's or an agent's with no plan, showing the
- * time the list's order chooses. A row says what its group does not: its
- * repository's name where `repository` names one, and the faces `faces`
- * lets it wear (`rowFaceOf`).
+ * time the list's order chooses, and one mark before it (`SidebarTask`).
  * A task's child tasks among the rows stand nested under it, folded until
  * its chevron opens them, to any depth, the sidebar having moved each into
  * the list holding its parent (`homedTaskRows`); under a fold, the open
@@ -478,13 +469,10 @@ function LeavingGroups<G>({
 function TaskRows({
   rows,
   context,
-  repository,
 }: {
   rows: readonly TaskRow[];
   context: RowContext;
-  repository?: (row: TaskRow) => React.ReactNode;
 }): React.JSX.Element {
-  const { faces } = context;
   // Note that the rows keep the view's order, so a row is dragged only out of them, into a section or Pinned.
   const { dropOut } = context;
   const nested = useNestedRows(rows, context.opened, context.currentRow, context.every);
@@ -519,13 +507,10 @@ function TaskRows({
             unread={context.unread(row.task)}
             now={context.now}
             at={taskRowTime(row)}
-            repository={repository?.(row)}
-            faces={faces}
             depth={held.depth}
             nest={nest}
             place={place}
             fold={childTasksFold(held, context.onFoldTask)}
-            childCount={context.childCount(row.task.id)}
             onOpen={() => context.onOpen(row.task.id)}
           />
         ) : (
@@ -533,11 +518,10 @@ function TaskRows({
             key={row.agent.id}
             agent={row.agent}
             agents={context.tasks.agents}
+            signedIn={context.tasks.signedIn}
             current={context.currentRow(row)}
             now={context.now}
             at={taskRowTime(row)}
-            repository={repository?.(row)}
-            face={faces.creator && faces.assignee}
             nest={nest}
             place={place}
             shown={context.tasks.shown && context.inSight}
@@ -912,7 +896,6 @@ function PinnedRows({
               nest={nest}
               place={place}
               fold={childTasksFold(held, context.onFoldTask)}
-              childCount={context.childCount(child.task.id)}
               onOpen={() => context.onOpen(child.task.id)}
             />
           ) : null;
@@ -943,6 +926,7 @@ function PinnedRows({
               <SidebarAgent
                 agent={agent}
                 agents={context.tasks.agents}
+                signedIn={context.tasks.signedIn}
                 current={context.currentRow(agentRow(agent))}
                 now={context.now}
                 at={agent.activityAt}
@@ -972,7 +956,6 @@ function PinnedRows({
                 nest={nest}
                 place={place}
                 fold={held === undefined ? undefined : childTasksFold(held, context.onFoldTask)}
-                childCount={context.childCount(task.id)}
                 onOpen={() => context.onOpen(task.id)}
               />
             ) : (
@@ -1474,20 +1457,16 @@ function taskPlaces(
 }
 
 /**
- * The Tasks section's groups as the view draws them. A row says what its
- * group does not: under a repository's header a teammate's face; in one run
- * its repository and the face. Under a creator's header it says neither,
- * its repository left to its card.
+ * The Tasks section's groups as the view draws them. A row names neither
+ * its repository nor a face, which its card says.
  */
 function TaskGroups({
   sections,
-  repositoryOf,
   folds,
   onNewTaskIn,
   context,
 }: {
   sections: TaskSections;
-  repositoryOf: (row: TaskRow) => React.ReactNode;
   folds: FoldedGroups;
   onNewTaskIn: (repository: string) => void;
   context: RowContext;
@@ -1517,7 +1496,7 @@ function TaskGroups({
       );
     case TASK_GROUPING.NONE:
       return sections.rows.length === 0 ? null : (
-        <TaskRows rows={sections.rows} context={context} repository={repositoryOf} />
+        <TaskRows rows={sections.rows} context={context} />
       );
   }
 }
@@ -1832,7 +1811,6 @@ function SidebarColumn({
   room = SHELL_ROOM.WIDE,
 }: DesktopSidebarProps): React.JSX.Element {
   const tasks: SidebarTasks = { ...control, ...usePins(control.drawnTasks) };
-  const pictures = useRepositoryPictures();
   const connected = useConnected();
   const onTasks = tab === PANEL_TAB.TASKS;
   // Whether a row of the column is lifted into a drag, while which an empty Pinned stands to take it.
@@ -2057,8 +2035,6 @@ function SidebarColumn({
     if (workspace !== undefined) sectionEdits.beginCreate(workspace.id, newSectionButton.current);
   };
   const newSectionOffered = sectionsShown && tasks.workspace !== undefined;
-  // Note that the count reads every listed task, not the rows the view draws, which hides the finished ones by default.
-  const childCounts = useMemo(() => childTaskCounts(tasks.listed.tasks), [tasks.listed.tasks]);
   const context: RowContext = {
     tasks,
     current,
@@ -2085,7 +2061,6 @@ function SidebarColumn({
           typeof tab !== "string" && tab.kind === STRIP_TAB_KIND.AGENT && tab.agent === agentId,
       ),
     now,
-    faces: { creator: true, assignee: assignedTo.kind !== ASSIGNED_TO.MEMBER },
     inSight: overlay.inSight,
     dropOut: sectionsShown ? dropRow : undefined,
     onCarried: setCarrying,
@@ -2094,7 +2069,6 @@ function SidebarColumn({
       agent.archivedAt === undefined
         ? moveToSectionEntry({ agent: true, id: agent.id }, agent.workspaceId, sectionDialogs)
         : undefined,
-    childCount: (taskId) => childCounts.get(taskId),
     opened: folds.taskOpened,
     every: everyTask,
     onFoldTask: folds.toggleTask,
@@ -2196,20 +2170,6 @@ function SidebarColumn({
       ].flatMap((row) => (row.kind === TASK_ROW.TASK ? [row.task.id] : [])),
     ),
   );
-  // A row names its repository as its group's header would, its owner's picture and its name, owner and all where two share a name.
-  const named = repositoryGroups(unpinned);
-  const repositoryOf = (row: TaskRow) => {
-    const repository = taskRowRepository(row);
-    return (
-      <ReplayMask>
-        <RepositoryName
-          repository={repository}
-          label={repository === null ? undefined : repositoryLabel(repository, named)}
-          pictures={pictures}
-        />
-      </ReplayMask>
-    );
-  };
   // The rows as the list draws them: the pinned, then each group not folded
   // away, the open row standing in its place even under a fold, so walking
   // the list still moves from it.
@@ -2420,12 +2380,10 @@ function SidebarColumn({
                               unread={unread(row.task)}
                               at={taskRowTime(row)}
                               now={now}
-                              faces={context.faces}
                               depth={held.depth}
                               nest={nest}
                               place={place}
                               fold={childTasksFold(held, folds.toggleTask)}
-                              childCount={context.childCount(row.task.id)}
                               onOpen={() => context.onOpen(row.task.id)}
                             />
                           ) : (
@@ -2433,10 +2391,10 @@ function SidebarColumn({
                               key={row.agent.id}
                               agent={row.agent}
                               agents={tasks.agents}
+                              signedIn={tasks.signedIn}
                               current={currentRow(row)}
                               now={now}
                               at={taskRowTime(row)}
-                              face={context.faces.creator && context.faces.assignee}
                               nest={nest}
                               place={place}
                               shown={tasks.shown && overlay.inSight}
@@ -2529,7 +2487,6 @@ function SidebarColumn({
                       )}
                       <TaskGroups
                         sections={homedTasks}
-                        repositoryOf={repositoryOf}
                         folds={folds}
                         onNewTaskIn={chosen(newTaskIn)}
                         context={context}

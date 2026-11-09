@@ -1,9 +1,16 @@
 import type { TaskStanding } from "@repo/features/task-wire";
 import { APP_COMMAND } from "@repo/settings/shortcuts";
-import { BUTTON_SIZE, ComposeIcon, CornerBadge, IconButton, PlusIcon, Tooltip } from "@repo/ui";
+import {
+  BUTTON_SIZE,
+  ComposeIcon,
+  CornerBadge,
+  DRAFT_WORD,
+  IconButton,
+  PlusIcon,
+  Tooltip,
+} from "@repo/ui";
 import { PencilLineIcon } from "@repo/ui/icons";
 import { TASKS_GROUP, type TasksGroupHead } from "@repo/ui/tasks-page-model";
-import { DRAFT_WORD } from "../draft-mark.js";
 import type { QuickAddInto } from "../tasks/use-new-task.js";
 import type { TasksControl } from "../tasks/use-tasks-tab.js";
 

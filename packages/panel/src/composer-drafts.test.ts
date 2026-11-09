@@ -15,6 +15,7 @@ import {
 import type { Task } from "@repo/features/task-wire";
 import { WORKSPACE_ROLE, type Workspace } from "@repo/features/workspace-wire";
 import type { AppHostRead, AppInboxItems } from "@repo/host/app-state";
+import { DRAFT_WORD } from "@repo/ui";
 import { agentTab, draftTab, sameTab, TAB_WORDS } from "@repo/ui/tab-strip-model";
 import { DOCUMENT_REGION, TASKS_PAGE } from "@repo/ui/tasks-model";
 import { serveEffectsOn } from "@repo/ui/testing/effect-services";
@@ -36,7 +37,6 @@ import {
 } from "./composer-drafts.js";
 import { DesktopTasks } from "./desktop/desktop-tasks.js";
 import { SidebarTask } from "./desktop/task-actions.js";
-import { DRAFT_WORD } from "./draft-mark.js";
 import {
   type AgentComposerControl,
   type MessageSender,
