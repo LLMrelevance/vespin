@@ -15,10 +15,10 @@ import {
 } from "@repo/features/pull-request-write-wire";
 import { FAILURE_SURFACE } from "@repo/features/shown-failure";
 import {
-  Badge,
   BUTTON_VARIANT,
   Button,
   type ButtonVariant,
+  ChipName,
   CONFIRM_LOSS,
   ConfirmDialog,
   type DialogQuestion,
@@ -26,6 +26,7 @@ import {
   SpinnerRing,
   SplitButton,
   STATUS_TONE,
+  StaticChip,
   type StatusTone,
   Tooltip,
   useConfirmDialog,
@@ -155,6 +156,20 @@ function mergeActionOf(merge: MergeState, merging: PullRequestMerging): MergeAct
   return merging.autoMergeAllowed && waiting ? MERGE_ACTION.ENABLE_AUTO_MERGE : undefined;
 }
 
+/** The press a pull request offers as it stands: none for one not open, or whose merge read has not landed. */
+function actionFor(pullRequest: AgentOverviewPullRequest): MergeAction | undefined {
+  const { merging } = pullRequest;
+  if (merging === undefined || pullRequest.state !== PULL_REQUEST_STATE.OPEN) return undefined;
+  return mergeActionOf(pullRequest.merge, merging);
+}
+
+/** Whether a pull request may still merge: open, or a draft. */
+function isLive(pullRequest: AgentOverviewPullRequest): boolean {
+  return (
+    pullRequest.state === PULL_REQUEST_STATE.OPEN || pullRequest.state === PULL_REQUEST_STATE.DRAFT
+  );
+}
+
 /** What a merge GitHub says is blocked waits on, where the reviews or checks say; none where neither does. */
 function blockedWords(merging: PullRequestMerging | undefined): string | undefined {
   if (merging === undefined) return undefined;
@@ -237,7 +252,7 @@ interface ChipFace {
 
 /** Each chip's glyph, saying its state again beside its word. */
 const CHIP_GLYPHS = {
-  CHECKING: <SpinnerRing size={SPINNER_SIZE.SMALL} />,
+  CHECKING: <SpinnerRing size={SPINNER_SIZE.INLINE} />,
   HELD: <CircleXIcon aria-hidden="true" />,
   BEHIND: <TriangleAlertIcon aria-hidden="true" />,
   REVIEW: <UserRoundIcon aria-hidden="true" />,
@@ -294,14 +309,20 @@ function chipOf(
   }
 }
 
-/** The chip: its glyph and word in its tone, GitHub's sentence in its hint and for a reader. */
+/**
+ * The chip: its glyph in its tone and its word, GitHub's sentence in its hint
+ * and for a reader. Note that it is a static chip at the control's size, with
+ * no edge, so it stands level with the presses beside it while reading as a
+ * status rather than a press.
+ */
 function MergeChip({ face, sentence }: { face: ChipFace; sentence: string }): React.JSX.Element {
   return (
     <Tooltip label={sentence}>
       <span className="merge-chip inline-flex min-w-0">
-        <Badge tone={face.tone} icon={face.icon} hideWordsUnder={VISUALLY_HIDDEN_UNDER.SNUG}>
-          {face.label}
-        </Badge>
+        <StaticChip tone={face.tone} hideWordsUnder={VISUALLY_HIDDEN_UNDER.SNUG}>
+          {face.icon}
+          <ChipName>{face.label}</ChipName>
+        </StaticChip>
         <VisuallyHidden>{`: ${sentence}`}</VisuallyHidden>
       </span>
     </Tooltip>
@@ -405,10 +426,27 @@ const DEQUEUE_QUESTION: DialogQuestion = {
 };
 
 /**
+ * Where the merge stands, for an open pull request or a draft, as its
+ * overview read it: the chip, which leads the title row's controls rather
+ * than standing between them, so the presses stand together. Nothing for
+ * one merged or closed, or where the chip has nothing to say.
+ */
+export function MergeStatus({
+  pullRequest,
+}: {
+  pullRequest: AgentOverviewPullRequest;
+}): React.JSX.Element | null {
+  if (!isLive(pullRequest)) return null;
+  const face = chipOf(pullRequest, actionFor(pullRequest));
+  if (face === undefined) return null;
+  return <MergeChip face={face} sentence={sentenceOf(pullRequest)} />;
+}
+
+/**
  * The merge control for an open pull request or a draft, as its overview
- * read it: the chip, the press, and the question leaving the queue asks
- * first. Nothing for one merged or closed, or where neither a
- * chip nor a press has anything to say.
+ * read it: the press, and the question leaving the queue asks first; where
+ * the merge stands is `MergeStatus`'s. Nothing for one merged or closed, or
+ * where no press may be made.
  */
 export function MergeControl({
   pullRequest,
@@ -437,14 +475,8 @@ export function MergeControl({
   // Note that a question left behind as its panel hides is let go whole, so the panel comes back asking nothing; one already answered finishes.
   if ((!shown || !inQueue) && asked && !confirm.busy) setAsked(false);
 
-  const live =
-    pullRequest.state === PULL_REQUEST_STATE.OPEN || pullRequest.state === PULL_REQUEST_STATE.DRAFT;
-  if (!live) return null;
-  const action =
-    merging === undefined || pullRequest.state !== PULL_REQUEST_STATE.OPEN
-      ? undefined
-      : mergeActionOf(pullRequest.merge, merging);
-  const face = chipOf(pullRequest, action);
+  if (!isLive(pullRequest)) return null;
+  const action = actionFor(pullRequest);
   const pending = isMergeWrite(writes.pending) ? writes.pending : undefined;
   const busy = writes.pending !== undefined;
   const headSha = merging?.headSha ?? "";
@@ -520,10 +552,9 @@ export function MergeControl({
     }
   };
   const drawn = press();
-  if (face === undefined && drawn === null && !asked) return null;
+  if (drawn === null && !asked) return null;
   return (
     <span className="merge-control flex min-h-control min-w-0 items-center gap-control-gap">
-      {face === undefined ? null : <MergeChip face={face} sentence={sentenceOf(pullRequest)} />}
       {drawn}
       <ConfirmDialog open confirm={confirm} question={DEQUEUE_QUESTION} />
     </span>

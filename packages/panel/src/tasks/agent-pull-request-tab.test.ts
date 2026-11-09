@@ -719,6 +719,11 @@ function mergeControl(tab: HTMLElement): HTMLElement | null {
   return tab.querySelector<HTMLElement>(".pull-request-title-row .merge-control");
 }
 
+/** Where the merge stands, leading the title row's controls, where it says anything. */
+function mergeStatus(tab: HTMLElement): HTMLElement | null {
+  return tab.querySelector<HTMLElement>(".pull-request-title-row .merge-chip");
+}
+
 /** What the toolbar's ⋯ offers for the tab, each item's words and whether it applies now. */
 function toolbarItems(tab: HTMLElement): string[] {
   return [...tab.querySelectorAll<HTMLButtonElement>("[data-toolbar] button")].map(
@@ -764,10 +769,10 @@ test("the tab draws the pull request as a page: its standing and branches, wheth
     ),
   );
   assert.equal(tab.querySelector(".pull-request-title")?.textContent, "Expire invitations #42");
-  const merge = mergeControl(tab) ?? assert.fail("an open pull request has a merge control");
-  assert.equal(merge.querySelector(".ui-badge")?.textContent, "Conflicts");
+  const merge = mergeStatus(tab) ?? assert.fail("an open pull request says where its merge stands");
+  assert.equal(merge.querySelector(".ui-chip")?.textContent, "Conflicts");
   assert.equal(
-    merge.querySelector(".merge-chip .ui-visually-hidden")?.textContent,
+    merge.querySelector(".ui-visually-hidden")?.textContent,
     ": Conflicts with main",
     "an open pull request says whether it would merge",
   );
@@ -2841,17 +2846,18 @@ function mergePresses(tab: HTMLElement): HTMLButtonElement[] {
 
 /** What the merge control shows: its chip's word, tone, and GitHub's sentence for a reader; its press, the press's look, and whether a chevron chooses the method. None where it shows nothing. */
 function mergeShown(tab: HTMLElement) {
-  const control = mergeControl(tab);
-  if (control === null) return undefined;
-  const badge = control.querySelector(".merge-chip .ui-badge");
+  const status = mergeStatus(tab);
+  if (mergeControl(tab) === null && status === null) return undefined;
+  const badge = status?.querySelector(".ui-chip");
   const [press] = mergePresses(tab);
   return {
     chip: badge?.textContent,
     tone: badge?.getAttribute("data-tone"),
-    sentence: control.querySelector(".merge-chip .ui-visually-hidden")?.textContent?.slice(2),
+    sentence: status?.querySelector(".ui-visually-hidden")?.textContent?.slice(2),
     press: press?.textContent,
     look: press?.getAttribute("data-variant"),
-    chevron: control.querySelector('[aria-label="Choose how to merge"]') !== null,
+    chevron:
+      (mergeControl(tab)?.querySelector('[aria-label="Choose how to merge"]') ?? null) !== null,
   };
 }
 
@@ -3398,7 +3404,7 @@ test("a press outside the review panel closes it, its words kept, and one on a s
   }
 });
 
-test("a pull request with no labels spends no line on them: its label picker stands beside the reviewers' picker, and its labels, once it has some, close that same line", async () => {
+test("a pull request's labels stand before the picker that edits them, as its reviewers do: with none, the picker says what it adds; once some stand, it is a plus named for editing them, the two closing the line of people", async () => {
   let labels: { name: string; color: string }[] = [];
   const tab = await draw(
     controlAnswering({
@@ -3408,21 +3414,27 @@ test("a pull request with no labels spends no line on them: its label picker sta
   const people = () =>
     tab.querySelector<HTMLElement>(".pull-request-header .pull-request-people") ??
     assert.fail("the line of people stands");
-  const pickers = () =>
-    [...people().querySelectorAll<HTMLButtonElement>(".pull-request-reviewers button")].map(
-      (button) => button.getAttribute("aria-label"),
-    );
+  const labelGroup = () =>
+    people().querySelector(".pull-request-label-group") ?? assert.fail("the labels' group stands");
+  const labelPicker = () => labelGroup().querySelector(".pull-request-picker button");
 
   assert.equal(tab.querySelector(".pull-request-header .pull-request-labels") === null, true);
-  assert.deepEqual(pickers(), ["Reviewer", "Label"]);
+  assert.equal(labelPicker()?.getAttribute("aria-label"), "Label");
 
   labels = [{ name: "bug", color: "d73a4a" }];
   await pressToolbar(tab, "Refresh");
   await settle();
-  const list = people().querySelector('[aria-label="Labels"]') ?? assert.fail("its labels stand");
+  const list =
+    labelGroup().querySelector('[aria-label="Labels"]') ?? assert.fail("its labels stand");
   assert.equal(list.textContent, "bug");
-  assert.equal(people().lastElementChild, list, "they close the line of people");
-  assert.deepEqual(pickers(), ["Reviewer", "Label"]);
+  assert.equal(
+    list.compareDocumentPosition(labelPicker() ?? assert.fail("its picker stands")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    Node.DOCUMENT_POSITION_FOLLOWING,
+    "the picker follows the labels",
+  );
+  assert.equal(labelPicker()?.getAttribute("aria-label"), "Edit labels");
+  assert.equal(people().lastElementChild, labelGroup(), "they close the line of people");
 });
 
 it.effect(
@@ -3654,9 +3666,10 @@ test("the stack it stands in sits beside its branches; its menu lists it tip fir
   );
   const current = items()[2];
   assert.equal(current?.getAttribute("aria-checked"), "true");
-  assert.equal(current?.disabled, true, "this pull request is not opened again");
+  assert.equal(current?.disabled, false, "this pull request is drawn at full strength");
   act(() => button.click());
 
+  press(42);
   press(40);
   press(38);
   press(44);
@@ -3805,8 +3818,9 @@ test("the reviewer picker lists the repository's teams then its people, the auth
     }),
   );
   const picker = () =>
-    tab.querySelector<HTMLButtonElement>('.pull-request-reviewers [aria-label="Reviewer"]') ??
-    assert.fail("the reviewer picker stands beside the reviewers");
+    tab.querySelector<HTMLButtonElement>(
+      '.pull-request-reviewers [aria-label="Reviewer"], .pull-request-reviewers [aria-label="Edit reviewers"]',
+    ) ?? assert.fail("the reviewer picker stands beside the reviewers");
 
   await vi.waitFor(picker);
   act(() => picker().click());
@@ -3883,10 +3897,13 @@ test("a picker's choice shows its button busy once the change has waited the set
     }),
   );
   const picker = (name: string) =>
-    tab.querySelector<HTMLButtonElement>(`.pull-request-reviewers button[aria-label^="${name}"]`);
+    tab.querySelector<HTMLButtonElement>(
+      `.pull-request-header .pull-request-picker button[aria-label^="${name}"]`,
+    );
   const ringed = (name: string) => picker(name)?.querySelector(".ui-spinner-ring") != null;
-  const labels = () => picker("Label") ?? picker("Updating labels");
-  const reviewers = () => picker("Reviewer") ?? picker("Updating reviewers");
+  const labels = () => picker("Label") ?? picker("Edit labels") ?? picker("Updating labels");
+  const reviewers = () =>
+    picker("Reviewer") ?? picker("Edit reviewers") ?? picker("Updating reviewers");
 
   act(() => labels()?.click());
   await settle();
@@ -3943,11 +3960,13 @@ test("the label picker lists the repository's labels, those on the pull request 
     ),
   );
   assert.equal(tab.querySelector('[aria-label="Reviewer"]') === null, true);
-  const picker =
-    tab.querySelector<HTMLButtonElement>('.pull-request-reviewers [aria-label="Label"]') ??
-    assert.fail("the label picker stands beside the reviewers");
+  // Note that the picker is read again before each press, because taking off the last label turns its plus into the word "Label".
+  const picker = () =>
+    tab.querySelector<HTMLButtonElement>(
+      '.pull-request-label-group [aria-label="Label"], .pull-request-label-group [aria-label="Edit labels"]',
+    ) ?? assert.fail("the label picker stands after the labels");
 
-  act(() => picker.click());
+  act(() => picker().click());
   await settle();
   await vi.waitFor(() =>
     assert.deepEqual(pickerRows(), [
@@ -3956,7 +3975,7 @@ test("the label picker lists the repository's labels, those on the pull request 
     ]),
   );
   await pickRow("bug");
-  act(() => picker.click());
+  act(() => picker().click());
   await settle();
   await pickRow("docs");
 
@@ -3988,8 +4007,9 @@ test("a reviewer chosen stands in the header before GitHub answers, and goes bac
 
   act(() =>
     (
-      tab.querySelector<HTMLButtonElement>('.pull-request-reviewers [aria-label="Reviewer"]') ??
-      assert.fail("the reviewer picker stands beside the reviewers")
+      tab.querySelector<HTMLButtonElement>(
+        '.pull-request-reviewers [aria-label="Reviewer"], .pull-request-reviewers [aria-label="Edit reviewers"]',
+      ) ?? assert.fail("the reviewer picker stands beside the reviewers")
     ).click(),
   );
   await settle();
@@ -4034,8 +4054,9 @@ test("a label chosen stands under the title before GitHub answers, in the color 
 
   act(() =>
     (
-      tab.querySelector<HTMLButtonElement>('.pull-request-reviewers [aria-label="Label"]') ??
-      assert.fail("the label picker stands beside the reviewers")
+      tab.querySelector<HTMLButtonElement>(
+        '.pull-request-label-group [aria-label="Label"], .pull-request-label-group [aria-label="Edit labels"]',
+      ) ?? assert.fail("the label picker stands beside the reviewers")
     ).click(),
   );
   await settle();
@@ -4066,8 +4087,9 @@ test("a picker whose repository could not be read offers Retry in its menu, whic
 
   act(() =>
     (
-      tab.querySelector<HTMLButtonElement>('.pull-request-reviewers [aria-label="Reviewer"]') ??
-      assert.fail("the reviewer picker stands beside the reviewers")
+      tab.querySelector<HTMLButtonElement>(
+        '.pull-request-reviewers [aria-label="Reviewer"], .pull-request-reviewers [aria-label="Edit reviewers"]',
+      ) ?? assert.fail("the reviewer picker stands beside the reviewers")
     ).click(),
   );
   await settle();
@@ -4487,11 +4509,7 @@ test("an open pull request GitHub holds in its merge queue says Queued and its p
     "queued",
   );
   assert.deepEqual(offered(tab), ["Close pull request"]);
-  assert.equal(
-    mergeControl(tab)?.querySelector(".merge-chip") === null,
-    true,
-    "no chip says it again",
-  );
+  assert.equal(mergeStatus(tab) === null, true, "no chip says it again");
   assert.deepEqual(
     mergePresses(tab).map((each) => each.textContent),
     ["Remove from queue"],

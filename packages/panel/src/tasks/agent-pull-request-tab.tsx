@@ -47,7 +47,6 @@ import {
   AVATAR_SIZE,
   Avatar,
   BUTTON_VARIANT,
-  Button,
   ButtonLink,
   CHIP_LOOK,
   CHOICE_BAR_FOLD,
@@ -206,7 +205,7 @@ import {
 import { DiffListTopRoomContext } from "./diff-list.js";
 import { PierreDiff, useDiffLook } from "./file-diff.js";
 import type { TreeShown } from "./file-view.js";
-import { MergeControl } from "./merge-box.js";
+import { MergeControl, MergeStatus } from "./merge-box.js";
 import {
   PENDING_WORDS,
   type PendingActs,
@@ -1909,7 +1908,7 @@ function PullRequestHead({
   const { author, opened, merged } = facts;
   return (
     <PeopleLine>
-      <span className="pull-request-branch-row flex min-w-0 max-w-full items-center gap-control-gap">
+      <span className="pull-request-branch-row flex min-w-0 max-w-full flex-wrap items-center gap-control-gap">
         <PullRequestBranches base={facts.base} head={facts.head} headOwner={facts.headOwner} />
         {pullRequest === undefined ? null : (
           <PullRequestStack stack={pullRequest.stack ?? []} number={pullRequest.number} />
@@ -1933,12 +1932,17 @@ function PullRequestHead({
           editing={editing}
         />
       )}
-      <PullRequestLabels labels={facts.labels} />
+      {pullRequest === undefined && facts.labels.length === 0 ? null : (
+        <span className="pull-request-label-group inline-flex min-w-0 max-w-full items-center gap-control-gap">
+          <PullRequestLabels labels={facts.labels} />
+          {pullRequest === undefined ? null : <LabelPicker writes={writes} {...editing} />}
+        </span>
+      )}
     </PeopleLine>
   );
 }
 
-/** The line's reviewers, where each stands, and the reviewer and label pickers, once the pull request's own read has landed. */
+/** The line's reviewers, where each stands, then the picker that edits them, once the pull request's own read has landed; nothing for one no review may be asked of that has no reviewers. */
 function HeadPeople({
   pullRequest,
   standings,
@@ -1953,16 +1957,18 @@ function HeadPeople({
     readonly picks: PullRequestPicks;
     readonly refreshing: boolean;
   };
-}): React.JSX.Element {
+}): React.JSX.Element | null {
   const author = pullRequest.author?.login;
   const reviewers = reviewersOf(editing.picks.requested, standings, author);
   const open =
     pullRequest.state === PULL_REQUEST_STATE.OPEN || pullRequest.state === PULL_REQUEST_STATE.DRAFT;
+  if (reviewers.length === 0 && !open) return null;
   return (
-    <span className="pull-request-reviewers inline-flex items-center gap-list-gap">
+    <span className="pull-request-reviewers inline-flex items-center gap-control-gap">
       {reviewers.length === 0 ? null : <HeaderReviewers reviewers={reviewers} />}
-      {open ? <ReviewerPicker author={author} writes={writes} {...editing} /> : null}
-      <LabelPicker writes={writes} {...editing} />
+      {open ? (
+        <ReviewerPicker author={author} held={reviewers.length > 0} writes={writes} {...editing} />
+      ) : null}
     </span>
   );
 }
@@ -2079,7 +2085,8 @@ function useViewActions(): {
 /**
  * The header's Preview, as stage-cli's header offers a pull request's
  * previews: one deployment serving an address opens at a press, and several
- * drop a menu naming each environment. Nothing stands until the checks land
+ * drop a menu naming each environment, from an outline chip ending in the
+ * menu's chevron, as every press in the header that drops a menu does. Nothing stands until the checks land
  * or where nothing serves an address, so a head still deploying offers no
  * door that leads nowhere.
  */
@@ -2117,15 +2124,16 @@ function PreviewControl({
   }));
   return (
     <span className="flex">
-      <Button
-        variant={BUTTON_VARIANT.OUTLINE}
-        icon={<ScanSearchIcon />}
-        label={PULL_REQUEST_WORDS.PREVIEWS}
-        trailing={formatCount(serving.length)}
+      <Chip
+        look={CHIP_LOOK.OUTLINE}
+        chevron
+        aria-label={PULL_REQUEST_WORDS.PREVIEWS}
         {...menu.trigger()}
       >
-        {PULL_REQUEST_WORDS.PREVIEW}
-      </Button>
+        <ScanSearchIcon aria-hidden="true" />
+        <ChipName>{PULL_REQUEST_WORDS.PREVIEW}</ChipName>
+        <ChipCount>{formatCount(serving.length)}</ChipCount>
+      </Chip>
       {menu.drawn === undefined ? null : (
         <ActionMenu
           label={PULL_REQUEST_WORDS.PREVIEWS}
@@ -3586,6 +3594,7 @@ function PullRequestTabBody({
                       </div>
                     )}
                     <div className="pull-request-title-actions">
+                      {overview === undefined ? null : <MergeStatus pullRequest={overview} />}
                       {phone ? null : (
                         <PreviewControl checks={landed(parts.checks)} shown={shown} />
                       )}
