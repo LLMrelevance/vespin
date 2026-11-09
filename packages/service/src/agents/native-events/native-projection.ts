@@ -1,6 +1,8 @@
 import { nativeTurnId, reasoningItemId } from "@repo/database/models/ids";
 import { CLAUDE_CODE_UNRECORDED_TOOL } from "@repo/features/agent-tools";
+import { MODEL_PROVIDER } from "@repo/features/models-wire";
 import { type WireValue, WireValueSchema } from "@repo/wire";
+import { USAGE_LIMIT_AGENT } from "@repo/wire/ui-messages";
 import { Option, Schema } from "effect";
 import {
   addModelUsage,
@@ -15,6 +17,7 @@ import {
   TURN_FAILURE,
   type TurnFailure,
 } from "../../core.js";
+import { providerModelOf } from "../../providers/model-catalog.js";
 import { CODER_REFUSAL } from "../coder-host/bounds.js";
 import { SESSION_TURN, SESSION_TURN_KIND } from "../sessions/agent-sessions.js";
 import {
@@ -542,8 +545,11 @@ class Fold {
     const { warm: _warm, rateLimit, rateLimitResetsAt, ...cold } = this.state;
     this.state = moment.warm === true ? { ...cold, warm: true } : cold;
     if (ended === undefined) return;
-    const turn = this.#closed(ended.turn);
+    let turn = this.#closed(ended.turn);
     if (this.#retried(turn, ended.openedForEnd, moment.ending, rateLimitResetsAt)) return;
+    if (turn.limited === true && moment.ending !== NATIVE_ENDING.STOPPED) {
+      turn = this.#limitNotice(turn, null);
+    }
     // Note that a refusal its launch ended on before the model turn's result still fails the turn.
     const status = statusOf(moment.ending, turn.failure ?? turn.refusing);
     const failed = status === RUN_STATUS.FAILED;
@@ -594,6 +600,21 @@ class Fold {
     this.#setTurn(undefined);
   }
 
+  #limitNotice(turn: Turn, resetsAt: number | null): Turn {
+    const provider =
+      this.#context.model === undefined
+        ? undefined
+        : providerModelOf(this.#context.model)?.provider;
+    return this.#tell(turn, {
+      kind: RUN_EVENT.USAGE_LIMIT_REACHED,
+      notice: {
+        agent:
+          provider === MODEL_PROVIDER.OPENAI ? USAGE_LIMIT_AGENT.CODEX : USAGE_LIMIT_AGENT.CLAUDE,
+        resetsAt,
+      },
+    });
+  }
+
   /**
    * Whether the turn, its plan's limit having cut it short, is kept open for
    * a launch on the next payer rather than ended: where another payer has
@@ -618,6 +639,7 @@ class Fold {
     const resets = [resetsAt, this.#context.resetsBeside].filter((at) => at !== undefined);
     const until = retry || resets.length === 0 ? undefined : Math.min(...resets);
     if (!retry && until === undefined) return false;
+    if (until !== undefined) turn = this.#limitNotice(turn, until);
     const {
       failure: _failure,
       refusal: _refusal,
@@ -774,6 +796,9 @@ class Fold {
         const turn = this.state.turn;
         if (turn !== undefined && moment.status === PLAN_STATUS.LIMIT_REACHED) {
           this.#setTurn({ ...turn, limited: true });
+        } else if (turn !== undefined && moment.status === PLAN_STATUS.VERIFIED) {
+          const { limited: _limited, ...verified } = turn;
+          this.#setTurn(verified);
         } else if (turn !== undefined && REFUSED_STATUSES.has(moment.status)) {
           this.#setTurn({ ...turn, refused: true });
         }
