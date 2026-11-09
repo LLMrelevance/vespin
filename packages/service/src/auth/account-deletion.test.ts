@@ -10,6 +10,7 @@ import {
   queueDeviceAgentLine,
 } from "@repo/database/models/device-agent-store";
 import { registerDevice } from "@repo/database/models/device-store";
+import { createTask, listTasks, readTask } from "@repo/database/models/task-store";
 import { workspaceSeams } from "@repo/database/models/workspace-seams";
 import { agentTable } from "@repo/database/schemas/agent";
 import {
@@ -179,7 +180,7 @@ const openAuthRoute = (client: Awaited<ReturnType<typeof openMigratedPglite>>) =
     return { auth, post, signUp, sandboxes, forgotten, resend };
   });
 
-/** A workspace of Ada's alone, holding a GitHub connection, an agent a member who has since left ran in a sandbox on a repository whose base drive a fill is still filling, another of that member's on her Mac in the same repository with a stop line waiting, and that member's scheduled automation, and one she shares with Grace, holding her own scheduled automation. */
+/** A workspace of Ada's alone, holding a GitHub connection, an agent a member who has since left ran in a sandbox on a repository whose base drive a fill is still filling, another of that member's on her Mac in the same repository with a stop line waiting, and that member's scheduled automation, and one she shares with Grace, holding her own scheduled automation and a task she created that Grace has an agent on. */
 const openWorkspaces = (
   route: Effect.Success<ReturnType<typeof openAuthRoute>>,
   ada: string,
@@ -280,9 +281,13 @@ const openWorkspaces = (
       })
       .returning({ id: automation.id });
     assert.ok(sharedScheduled);
+    const sharedTask = yield* createTask(ada, { organizationId: shared.id, name: "Invitations" });
+    const sharedAgent = yield* openTaskAgent(grace, shared.id, sharedTask.id);
     return {
       solo: solo.id,
       shared: shared.id,
+      sharedTask: sharedTask.id,
+      sharedAgent,
       leftBehind: agent.conversationId,
       baseDrive,
       mac,
@@ -293,7 +298,7 @@ const openWorkspaces = (
   });
 
 it.effect(
-  "deleting an account at Better Auth's endpoint deletes the workspace it alone belongs to, with its GitHub connection, deletes the agents' conversations and sandboxes it left, its repositories' base drives, and its automations' schedules, tells a local agent's Mac to discard it in place of its waiting lines, and leaves a workspace others share, forgetting the account's own schedule there",
+  "deleting an account at Better Auth's endpoint deletes the workspace it alone belongs to, with its GitHub connection, deletes the agents' conversations and sandboxes it left, its repositories' base drives, and its automations' schedules, tells a local agent's Mac to discard it in place of its waiting lines, and leaves a workspace others share, forgetting the account's own schedule there and keeping the tasks it created there for no one, with a teammate's agent on them",
   () =>
     Effect.gen(function* () {
       const client = yield* Effect.acquireRelease(Effect.promise(openMigratedPglite), (opened) =>
@@ -304,8 +309,17 @@ it.effect(
         const route = yield* openAuthRoute(client);
         const ada = yield* route.signUp("ada");
         const grace = yield* route.signUp("grace");
-        const { shared, leftBehind, baseDrive, mac, local, schedule, sharedSchedule } =
-          yield* openWorkspaces(route, ada.id, grace.id);
+        const {
+          shared,
+          leftBehind,
+          baseDrive,
+          mac,
+          local,
+          schedule,
+          sharedSchedule,
+          sharedTask,
+          sharedAgent,
+        } = yield* openWorkspaces(route, ada.id, grace.id);
 
         const deleted = yield* route.post("delete-user", {}, ada.cookie);
 
@@ -336,6 +350,20 @@ it.effect(
             kind,
           })),
           [{ agentId: local, kind: DEVICE_AGENT_LINE_KIND.DISCARD }],
+        );
+        // Ada's task in the shared workspace stays Grace's to read, created by no one, with Grace's agent on it.
+        const kept = yield* readTask(grace.id, sharedTask);
+        assert.equal(Option.getOrThrow(kept).ownerId, null);
+        assert.deepEqual(
+          (yield* listTasks(grace.id)).map((task) => [task.id, task.ownerId, task.createdBy]),
+          [[sharedTask, undefined, undefined]],
+        );
+        assert.deepEqual(
+          yield* db
+            .select({ taskId: agentTable.taskId })
+            .from(agentTable)
+            .where(eq(agentTable.id, sharedAgent)),
+          [{ taskId: sharedTask }],
         );
         // The solo workspace's schedule goes with it, then Ada's own in the shared one with her account.
         assert.deepEqual(route.forgotten, [schedule, sharedSchedule]);
