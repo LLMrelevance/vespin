@@ -19,6 +19,7 @@ import type { HostCapability } from "@repo/settings";
 import { SETTINGS_SEARCH_ANCHOR_ATTRIBUTE } from "@repo/settings/settings-anchors";
 import { SETTINGS_SECTION } from "@repo/settings/settings-views";
 import { SETTINGS_ROW_STATE } from "@repo/ui";
+import { ReplayUnmask, showsInReplay } from "@repo/ui/session-replay-marks";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, test, vi } from "vitest";
@@ -199,7 +200,14 @@ async function mount(
   const container = document.body.appendChild(document.createElement("div"));
   const root = createRoot(container);
   roots.push(root);
-  act(() => root.render(withQueryClient(createElement(AgentsPage, { signedIn: true }))));
+  // Note that the page stands under the unmask mark Settings draws every page under.
+  act(() =>
+    root.render(
+      withQueryClient(
+        createElement(ReplayUnmask, null, createElement(AgentsPage, { signedIn: true })),
+      ),
+    ),
+  );
   await settle();
   await vi.waitFor(() => assert.equal(harnessRowsStand(container), true));
   return container;
@@ -483,6 +491,11 @@ test("a saved key's row is drawn from the keys the host holds, the window asking
   held = { keys: [ANTHROPIC_KEY], subscriptions: [] };
   const page = await mount();
   assert.deepEqual(lineOf(credential(page, "Anthropic API key")), connectedLine);
+  assert.equal(
+    showsInReplay(credential(page, "Anthropic API key")),
+    false,
+    "a saved key's row is masked in a screen recording",
+  );
   assert.deepEqual(
     sent.map((each) => each.kind).filter((kind) => kind.startsWith("providerKeys.")),
     [ACT_KIND.PROVIDER_KEYS_FOLLOW],

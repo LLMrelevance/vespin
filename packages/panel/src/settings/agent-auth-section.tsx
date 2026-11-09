@@ -69,6 +69,7 @@ import {
   useMenu,
 } from "@repo/ui";
 import { GLYPH, ICON_SIZE } from "@repo/ui/icons";
+import { ReplayMask } from "@repo/ui/session-replay-marks";
 import { ACTION_RESULT_STATUS, type ActionResult } from "@repo/wire";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -120,9 +121,11 @@ import { ReadFailed } from "./marks.js";
  * and is cleared as soon as the service keeps it. Every answer is the
  * account's credentials whole, which Settings hands to the Default model
  * row (`onKeys`) so its note follows a save at once, and setup reads for
- * whether either harness can start an agent (`onConnected`). The lists are
- * kept out of the screen recording, which masks a field's characters but
- * not their count.
+ * whether either harness can start an agent (`onConnected`). The lists
+ * stand under the mask mark, since a saved key's hint names its last
+ * characters and Settings shows its own words, and the field a secret is
+ * pasted into is kept out of the screen recording, which masks a field's
+ * characters but not their count.
  *
  * Disconnecting a plan or removing a key asks first, over the window
  * (`ConfirmDialog`). Removing the credential in use leaves its harness on
@@ -720,19 +723,21 @@ function PasteSteps({
           {kind.first.body(() => setFirstDone(true))}
         </Step>
         <Step number={2} state={firstDone ? STEP_STATE.CURRENT : STEP_STATE.TO_DO}>
-          <SecretField
-            ref={field}
-            label={kind.label}
-            description={secret.saving ? kind.running : undefined}
-            error={refusedShown(secret.rejection, FAILURE_SURFACE.AGENT_KEY_SAVE)}
-            saved={held}
-            placeholder={kind.placeholder}
-            disabled={secret.saving}
-            value={secret.pasted}
-            onEscape={onEscape}
-            onChange={secret.change}
-            onPasted={secret.paste}
-          />
+          <div className={NO_CAPTURE}>
+            <SecretField
+              ref={field}
+              label={kind.label}
+              description={secret.saving ? kind.running : undefined}
+              error={refusedShown(secret.rejection, FAILURE_SURFACE.AGENT_KEY_SAVE)}
+              saved={held}
+              placeholder={kind.placeholder}
+              disabled={secret.saving}
+              value={secret.pasted}
+              onEscape={onEscape}
+              onChange={secret.change}
+              onPasted={secret.paste}
+            />
+          </div>
         </Step>
       </Steps>
     </Stack>
@@ -1195,7 +1200,7 @@ function CredentialLists({
     );
   }
   return (
-    <div className={NO_CAPTURE}>
+    <ReplayMask>
       <Stack gap={gap}>
         {HARNESSES.map((provider) => (
           <HarnessCredentials
@@ -1208,7 +1213,7 @@ function CredentialLists({
           />
         ))}
       </Stack>
-    </div>
+    </ReplayMask>
   );
 }
 
