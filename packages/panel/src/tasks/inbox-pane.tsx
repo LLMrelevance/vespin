@@ -1789,6 +1789,7 @@ export function InboxPane({
           readerId={readerId}
           control={control}
           agent={by.subject.agent}
+          agents={agents}
           thread={thread}
           controls={question}
           skills={agents.readSkills}

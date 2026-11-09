@@ -2698,7 +2698,7 @@ function AgentTabView({
   readModels: () => void;
   transcript: AgentTranscriptControl;
   composer: HeldComposer;
-  model: AgentModelControl;
+  model: AgentModelControl | undefined;
   servers: AgentServersControl;
   /** What the agent published, once the service has said; nothing before. */
   published: AgentPullRequestAnswer | undefined;
