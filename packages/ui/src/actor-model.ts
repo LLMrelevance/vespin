@@ -58,9 +58,10 @@ export const ACTOR_STATE = {
 
 export type ActorState = (typeof ACTOR_STATE)[keyof typeof ACTOR_STATE];
 
-/** Why the window cannot name someone: a member who left, a save the service names nobody for, or the one revision from before history. */
+/** Why the window cannot name someone: a member who left, an account deleted since, a save the service names nobody for, or the one revision from before history. */
 export const SOMEONE_REASON = {
   FORMER: "former",
+  DELETED: "deleted",
   UNNAMED: "unnamed",
   EARLIER: "earlier",
 } as const;
@@ -139,6 +140,16 @@ export const ROLE_WORDS = {
 /** The app itself, which is always the same actor. */
 export const APP_ACTOR: Actor = { kind: ACTOR_KIND.APP };
 
+/**
+ * Whoever left work behind and deleted their account since: never a name,
+ * an email, or a picture, since the account took them with it, so every
+ * such person is this one.
+ */
+export const DELETED_ACCOUNT_ACTOR: Actor = {
+  kind: ACTOR_KIND.SOMEONE,
+  reason: SOMEONE_REASON.DELETED,
+};
+
 /** How many hues an identity's letter is drawn on: `--ui-color-identity-1` through `--ui-color-identity-6`. */
 const IDENTITY_HUES = 6;
 
@@ -148,8 +159,17 @@ const CHARACTERS = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 /** The words for someone the window cannot name, by why, as a line's start says them. */
 const SOMEONE_WORDS = {
   [SOMEONE_REASON.FORMER]: "Former member",
+  [SOMEONE_REASON.DELETED]: "Deleted account",
   [SOMEONE_REASON.UNNAMED]: "Someone",
   [SOMEONE_REASON.EARLIER]: "Earlier",
+} as const satisfies Record<SomeoneReason, string>;
+
+/** The words for someone the window cannot name inside a sentence: "Created by a deleted account". */
+const SOMEONE_SENTENCE_WORDS = {
+  [SOMEONE_REASON.FORMER]: "former member",
+  [SOMEONE_REASON.DELETED]: "a deleted account",
+  [SOMEONE_REASON.UNNAMED]: "someone",
+  [SOMEONE_REASON.EARLIER]: "earlier",
 } as const satisfies Record<SomeoneReason, string>;
 
 /**
@@ -224,7 +244,10 @@ export function actorName(
       case ACTOR_KIND.APP:
         return PRODUCT_NAME;
       case ACTOR_KIND.SOMEONE:
-        return actor.name ?? inSentence(SOMEONE_WORDS[actor.reason], sentence);
+        return (
+          actor.name ??
+          (sentence ? SOMEONE_SENTENCE_WORDS[actor.reason] : SOMEONE_WORDS[actor.reason])
+        );
       case ACTOR_KIND.GITHUB:
         return githubName(actor);
     }
@@ -305,7 +328,8 @@ export function accountActor(account: {
  * the owner's id, so the reader's own task is drawn as their `account`, as
  * the members list them where they do, and another member's as the members
  * list that id; where neither knows a name, the creator is someone unnamed,
- * never a face with no name.
+ * never a face with no name. A task naming neither was made by an account
+ * deleted since, since every task is made by one.
  */
 export function creatorActor(
   task: {
@@ -316,7 +340,8 @@ export function creatorActor(
   account: PersonActor | undefined,
 ): Actor {
   const { createdBy, ownerId } = task;
-  if (createdBy !== undefined || ownerId === undefined) {
+  if (createdBy === undefined && ownerId === undefined) return DELETED_ACCOUNT_ACTOR;
+  if (createdBy !== undefined) {
     return personActor(createdBy, reader.members, reader.readerId, reader.former);
   }
   const member = reader.members?.find((each) => each.userId === ownerId);
