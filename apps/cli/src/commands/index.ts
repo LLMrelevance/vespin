@@ -22,6 +22,7 @@ import { modelsCommand } from "./models.js";
 import { prCommand } from "./pr.js";
 import { preferencesCommand } from "./preferences.js";
 import { sectionCommand } from "./section.js";
+import { setupCommand } from "./setup.js";
 import { taskCommand } from "./task.js";
 import { updateCommand } from "./update.js";
 import { versionCommand } from "./version.js";
@@ -36,6 +37,7 @@ export const COMMANDS = [
   prCommand,
   workspaceCommand,
   githubCommand,
+  setupCommand,
   inboxCommand,
   memoryCommand,
   automationCommand,

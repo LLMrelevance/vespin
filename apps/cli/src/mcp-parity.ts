@@ -83,4 +83,6 @@ export const MEMBER_MCP_CLI_PARITY = {
   [MEMBER_MCP_TOOL.UPDATE_AUTOMATION]: { command: ["automation", "update"] },
   [MEMBER_MCP_TOOL.RUN_AUTOMATION]: { command: ["automation", "run"] },
   [MEMBER_MCP_TOOL.DELETE_AUTOMATION]: { command: ["automation", "delete"] },
+  [MEMBER_MCP_TOOL.READ_SANDBOX_SETUP]: { command: ["setup", "show"] },
+  [MEMBER_MCP_TOOL.EDIT_SANDBOX_SETUP]: { command: ["setup", "edit"] },
 } as const satisfies Record<MemberMcpToolName, McpCliRow>;
