@@ -25,8 +25,10 @@ import { AttachedFileChips } from "./attached-file-chips.js";
  * paste of pictures, or a drop, as every message box does
  * (`../use-attached-files.ts`), held to the bounds a message to an agent is.
  * Its edit holds the files it keeps in its box with the files it adds, as
- * ordinary entries of the box's (`useCommentFileEntries`), each with its ×
- * to take it off.
+ * ordinary entries of the box's (`useCommentFileEntries`). A file its words
+ * name (`[Picture 1]`, `[File: spec.pdf]`) is drawn in the words, where its
+ * marker stands, rather than in the row (`useWordFiles`), written and
+ * posted alike.
  */
 
 /** How a plan's comment's file is read: as the plan's attachment, which its pictures read too. */
@@ -46,20 +48,22 @@ function useCommentFileReads(planId: string, files: readonly DescriptionCommentF
   });
 }
 
-/** A comment's files over its words. */
-export function CommentFiles({
-  planId,
-  files,
-}: {
-  planId: string;
-  files: readonly DescriptionCommentFile[];
-}): React.ReactNode {
+/** A comment's files as chips, each read once and kept as the plan's pictures are (`../picture-query.ts`). */
+export function useCommentFileChips(
+  planId: string,
+  files: readonly DescriptionCommentFile[],
+): FileChip[] {
   const urls = useCommentFileReads(planId, files);
-  const chips: FileChip[] = files.map((file, index) => ({
+  return files.map((file, index) => ({
     name: file.name,
     mediaType: file.mediaType,
     url: urls[index] ?? "",
   }));
+}
+
+/** A comment's files over its words, as chips; none where it carries none or its words draw every one. */
+export function CommentFiles({ chips }: { chips: readonly FileChip[] }): React.ReactNode {
+  if (chips.length === 0) return null;
   return (
     <div className="comment-files mx-0 mt-tight-gap mb-item-gap">
       <AttachedFileChips files={chips} />

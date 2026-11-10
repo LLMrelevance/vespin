@@ -1672,18 +1672,23 @@ test("a reply carries the files picked into its field, and a comment's files are
   );
 
   const field = card.querySelector(".comment-field") ?? assert.fail("no reply field");
+  const editor = field.querySelector<HTMLElement>(".composer-editor") ?? assert.fail("no field");
+  writeInComposer(editor, "Repro:");
   await pickFiles(field, [new File(["Steps to reproduce\n"], "steps.txt", { type: "text/plain" })]);
-  assert.deepEqual(
-    [...field.querySelectorAll('[aria-label="Attached files"] > li')].map(attachmentChipName),
-    ["steps.txt"],
+  assert.ok(
+    editor.querySelector('[data-chip="fileChip"] [aria-label="Open steps.txt"]'),
+    "the file picked stands in the words as its chip",
   );
-  await post(
-    field.querySelector<HTMLElement>(".composer-editor") ?? assert.fail("no field"),
-    "Repro attached.",
-  );
+  assert.equal(field.querySelectorAll('[aria-label="Attached files"] > li').length, 0);
+  pressInComposer(editor, "Enter");
+  await act(async () => undefined);
 
   const [reply] = asked;
   assert.equal(reply?.action.action, DESCRIPTION_COMMENT_ACTION.REPLY);
+  assert.equal(
+    reply !== undefined && "words" in reply.action ? reply.action.words : undefined,
+    "Repro: [File: steps.txt]",
+  );
   assert.deepEqual(
     reply !== undefined && "attachments" in reply.action
       ? reply.action.attachments?.map((file) => [file.name, file.mediaType, file.data])
@@ -1919,8 +1924,13 @@ function editWithFiles(
         ?.click(),
     );
   };
-  const held = () =>
-    [...field().querySelectorAll('[aria-label="Attached files"] > li')].map(attachmentChipName);
+  // Note that the files the edit holds stand in its row, the comment's own its words do not name, and in its words, the files added.
+  const held = () => [
+    ...[...field().querySelectorAll('[aria-label="Attached files"] > li')].map(attachmentChipName),
+    ...[...field().querySelectorAll('[data-chip="fileChip"] [aria-label^="Open "]')].map(
+      (chip) => chip.getAttribute("aria-label")?.slice("Open ".length) ?? null,
+    ),
+  ];
   const change = async () => {
     act(() =>
       field().querySelector<HTMLButtonElement>('button[aria-label="Remove old.txt"]')?.click(),
@@ -1931,6 +1941,64 @@ function editWithFiles(
     act(async () => field().querySelector<HTMLButtonElement>('button[aria-label="Save"]')?.click());
   return { ...drawnTab, kept, edit, field, held, change, save };
 }
+
+test("a picture a comment's words name is drawn where its marker stands, and its other files over its words", async () => {
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString("base64");
+  fakeActs({
+    act: (request: AnyAct): Promise<FakeActAnswer> =>
+      Promise.resolve(
+        request.kind === ACT_KIND.TASKS_PICTURE_READ
+          ? { status: FAKE_ANSWER.DONE, value: { contentType: "image/png", base64: png } }
+          : { status: FAKE_ANSWER.UNKNOWN_ACT },
+      ),
+  });
+  const [open] = THREADS;
+  assert.ok(open);
+  const pictured: DescriptionCommentThread = {
+    ...open,
+    entries: open.entries.map((entry) => ({
+      ...entry,
+      words: "The expired link shows [Picture 1] here, not ![a broken source](#file:%E0).",
+      files: [
+        {
+          attachmentId: "7a8b9c0d-1e2f-4a3b-8c4d-6e7f8091a2b3",
+          name: "Picture 1",
+          mediaType: "image/png",
+        },
+        {
+          attachmentId: "8b9c0d1e-2f3a-4b4c-9d5e-7f8091a2b3c4",
+          name: "log.txt",
+          mediaType: "text/plain",
+        },
+      ],
+    })),
+  };
+  const { container } = drawn("page", [pictured, ...THREADS.slice(1)]);
+  act(() =>
+    container
+      .querySelector<HTMLElement>(`mark.description-comment-mark[data-threads~="${ID.OPEN}"]`)
+      ?.click(),
+  );
+  for (let round = 0; round < 4; round += 1) await act(() => Promise.resolve());
+  const entry =
+    container.querySelector(`.comment-card[data-thread="${ID.OPEN}"] .comment-entry`) ??
+    assert.fail("no comment");
+
+  const words = entry.querySelector(".comment-words") ?? assert.fail("no words");
+  assert.ok(
+    words.querySelector('button[aria-label="Open Picture 1"]'),
+    "the picture stands in the words",
+  );
+  assert.ok(!words.textContent?.includes("[Picture 1]"));
+  assert.ok(
+    words.textContent?.includes("a broken source"),
+    "an image whose file source does not decode is its alt text",
+  );
+  assert.deepEqual(
+    [...entry.querySelectorAll('[aria-label="Attached files"] > li')].map(attachmentChipName),
+    ["log.txt"],
+  );
+});
 
 test("an edit takes a comment's file off by its \u00d7 and adds one picked by its +, saving the files kept by their ids and the file added", async () => {
   const { asked, kept, edit, held, change, save } = editWithFiles();

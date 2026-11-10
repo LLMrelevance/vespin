@@ -322,7 +322,8 @@ function AnswerCard({
   };
   const composer: AgentComposerControl = {
     draft: draft.note,
-    setDraft: (text) => control.onDraft(item, { ...draft, note: text }),
+    // Note that each change moves the card on from what it holds as the write lands, since a file's chip goes into the words the moment the file is held, before the box draws again.
+    setDraft: (text) => control.onHeld(item, (now) => ({ ...now, text })),
     attachments: draft.attachments,
     setAttachments: (next) => control.onAttachments(item, next),
     sending,
