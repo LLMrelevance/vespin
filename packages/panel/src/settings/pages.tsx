@@ -32,7 +32,7 @@ const SETTINGS_PAGE = {
   // Note that the cloud agents' variables and scripts stand on one page, since both exist only for those agents.
   [SETTINGS_VIEW.ENVIRONMENT]: { title: "Cloud environment", icon: <CloudCogIcon /> },
   [SETTINGS_VIEW.AGENTS]: { title: "Agents", icon: <GLYPH.AGENT /> },
-  [SETTINGS_VIEW.HOSTS]: { title: "Hosts", icon: <GLYPH.HOST /> },
+  [SETTINGS_VIEW.HOSTS]: { title: "Machines", icon: <GLYPH.HOST /> },
   [SETTINGS_VIEW.INTEGRATIONS]: { title: "Integrations", icon: <PlugIcon /> },
   // Note that the outside agents' and the command's page is named and marked for the product, never the protocol alone, because the MCP glyph and "MCP servers" are what the window calls the servers its own agents use.
   [SETTINGS_VIEW.MCP]: { title: `${PRODUCT_NAME} MCP & CLI`, icon: <ProductMark small glyph /> },
