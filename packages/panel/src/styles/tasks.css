@@ -2881,6 +2881,13 @@ svg.lucide {
   padding-bottom: 0;
 }
 
+/* Its files stand where the comment's own stood over its words
+   (`.comment-files`), with room at the row's end for the × each chip
+   carries past its corner. */
+.comment-field[data-variant="edit"] .ui-composer-files {
+  padding: var(--ui-tight-gap) var(--ui-item-gap) var(--ui-item-gap) 0;
+}
+
 /* Its foot holds no more than the +, the microphone, Cancel, and Send,
    which stand whole in a comment's narrowest card, so its box folds none of
    them into its ⋯ as a narrower agent's box would: it answers no composer
