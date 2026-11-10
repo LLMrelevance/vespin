@@ -45,6 +45,7 @@ import { cachedVideo } from "../cached-media.js";
 import { useChosenWorkspace } from "../chosen-workspace.js";
 import { appStateQuery } from "../host/app-state-query.js";
 import { useHostActs } from "../host/host-provider.js";
+import { dismissThreadNotifications } from "../notification-task.js";
 import { useSendsDrawn } from "./use-thread-answer.js";
 
 /** What a thread's videos are named under among the app's caches. */
@@ -233,7 +234,8 @@ export function useInboxActs(): {
 /**
  * Marks the thread read once it is opened, as the panel's pane does, and
  * once again each time it is opened anew; a thread read already is told
- * nothing.
+ * nothing. Its notifications still shown are removed as it opens, read or
+ * not, since the thread is on screen.
  */
 export function useReadOnOpen(listed: InboxListed | undefined): void {
   const { mark } = useInboxActs();
@@ -241,7 +243,11 @@ export function useReadOnOpen(listed: InboxListed | undefined): void {
   const unread = listed !== undefined && isUnread(listed.item);
   // Note that the mark is sent as a thread opens, never again as it is read, so only the thread's id moves it.
   useEffect(() => {
-    if (id !== undefined && unread) mark(id, false);
+    if (id === undefined) return;
+    if (unread) mark(id, false);
+    dismissThreadNotifications(id).catch((error: unknown) =>
+      console.error("The thread's notifications were not removed.", error),
+    );
   }, [id]);
 }
 
