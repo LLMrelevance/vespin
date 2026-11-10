@@ -59,6 +59,7 @@ import { readTask, readTaskWorkspace } from "@repo/database/models/task-store";
 import { listWorkspaces } from "@repo/database/models/workspace-store";
 import { storeWriter } from "@repo/database/models/writer";
 import type { AgentBrowserTab } from "@repo/features/agent-browser-tab-wire";
+import { AGENT_QUEUE_BOUNDS } from "@repo/features/agent-queue-wire";
 import { RETIRED_TOOL } from "@repo/features/agent-tools";
 import {
   AGENT_BOUNDS,
@@ -68,6 +69,7 @@ import {
   contextWindowSchema,
   disabledServersSchema,
   PULL_REQUEST_STATE,
+  QUEUE_CHANGE,
 } from "@repo/features/agent-wire";
 import { automationCreateRequestSchema } from "@repo/features/automation-wire";
 import { dateTimeSchema } from "@repo/features/date-mention";
@@ -227,6 +229,7 @@ import {
   recordMemberDescriptionNotes,
 } from "../agents/coder-host/description-edit.js";
 import { instancePublishedCache } from "../agents/coder-host/published.js";
+import { changeAgentQueue } from "../agents/coder-host/queue-change.js";
 import { productionSummaryModel } from "../agents/coder-host/replay-summary.js";
 import { sessionsRouter } from "../agents/coder-host/runtime-sessions.js";
 import { steerMemberWords } from "../agents/coder-host/steer.js";
@@ -1587,9 +1590,69 @@ const MessageAgentInputSchema = Schema.Struct({
     "What to tell the agent, as the member's own words: it reads them as a message the member " +
       "typed in its composer.",
   ),
+  queue: Schema.optionalKey(
+    describeWire(
+      Schema.Boolean,
+      "true to queue it behind the agent's turn, as the composer's ⌘↩ would, rather than steer " +
+        "it into the turn under way: it waits unsent, and goes as the member's next message once " +
+        "the turn and every message queued before it are over, at once where the agent stands " +
+        "idle. Only the agent's starter queues to it.",
+    ),
+  ),
 });
 
 type MessageAgentInput = typeof MessageAgentInputSchema.Type;
+
+/** What a queued message came to: waiting behind the turn, or handed on at once to an agent standing idle. */
+const MEMBER_QUEUE_DELIVERY = {
+  QUEUED: "queued",
+  HANDED_ON: "handed-on",
+} as const;
+
+/** Why a queued message was not queued, in the member's tool's words: another member's agent, a full queue, or the service. */
+const QUEUE_MESSAGE_REFUSAL = {
+  NOT_STARTER:
+    "Not queued: only the member who started that agent queues to it; send it without queue to " +
+    "steer it into the turn instead.",
+  FULL: `Not queued: that agent's queue already holds ${AGENT_QUEUE_BOUNDS.MAX_MESSAGES} messages.`,
+  UNAVAILABLE: "Not queued: the service could not take the message just now.",
+} as const;
+
+/** The words for a refusal of the queue change. */
+function queueRefusalWords(refusal: HostedRefusal): string {
+  switch (refusal.error) {
+    case HOSTED_API_ERROR.NOT_PERMITTED:
+      return QUEUE_MESSAGE_REFUSAL.NOT_STARTER;
+    case HOSTED_API_ERROR.INVALID_REQUEST:
+      return QUEUE_MESSAGE_REFUSAL.FULL;
+    case HOSTED_API_ERROR.NOT_FOUND:
+      return MESSAGE_AGENT_REFUSAL.NO_AGENT;
+    default:
+      return QUEUE_MESSAGE_REFUSAL.UNAVAILABLE;
+  }
+}
+
+/**
+ * One message queued as the member behind the agent's turn, through the
+ * change their composer's ⌘↩ makes (`changeAgentQueue`), under the call's
+ * key as its id: answered with how many messages wait before it goes.
+ */
+const memberQueue = (call: AgentCall, userId: string, agent: Agent, text: string) =>
+  Effect.gen(function* () {
+    const id = call.clientKey;
+    const queued = yield* Effect.result(
+      changeAgentQueue(userId, agent, { change: QUEUE_CHANGE.ADD, id, text }),
+    );
+    if (Result.isFailure(queued)) return agentToolRejected(queueRefusalWords(queued.failure));
+    const place = queued.success.messages.findIndex((message) => message.id === id);
+    return {
+      status: ACTION_RESULT_STATUS.ACCEPTED,
+      delivery: place === -1 ? MEMBER_QUEUE_DELIVERY.HANDED_ON : MEMBER_QUEUE_DELIVERY.QUEUED,
+      ...(place === -1 ? undefined : { ahead: place }),
+      ...(queued.success.paused === undefined ? undefined : { paused: queued.success.paused }),
+      agent: { id: agent.id, title: agentName(agent), model: agent.model },
+    };
+  });
 
 /**
  * One message as the member, to an agent of the workspace the call is about:
@@ -1597,7 +1660,7 @@ type MessageAgentInput = typeof MessageAgentInputSchema.Type;
  * member's own send, which refuses an agent it may not write to, in the words
  * the agents' own message is refused in.
  */
-const memberMessage = (call: AgentCall, { agentId, text }: MessageAgentInput) =>
+const memberMessage = (call: AgentCall, { agentId, text, queue }: MessageAgentInput) =>
   orStoreRefusal(
     Effect.gen(function* () {
       const found = yield* workspaceAgentOf(call.caller, agentId);
@@ -1605,6 +1668,7 @@ const memberMessage = (call: AgentCall, { agentId, text }: MessageAgentInput) =>
       const { agent } = found.value;
       if (agent.archivedAt !== null) return agentToolRejected(MESSAGE_AGENT_REFUSAL.ARCHIVED);
       const userId = callerUserId(call.caller);
+      if (queue === true) return yield* memberQueue(call, userId, agent, text);
       const sent = yield* Effect.result(
         steerMemberWords(call.writer, userId, agent, { text, clientKey: call.clientKey }),
       );
@@ -1626,7 +1690,11 @@ const MEMBER_MESSAGE_AGENT_TOOL = memberMcpTool({
     "its next step, and an idle one starts a turn on it; an archived agent takes nothing. Each " +
     "call sends a message of its own, so call it once for each. Answers `accepted` once the " +
     "agent's session has taken it, without waiting for it to act or reply, or `rejected` and " +
-    `why nothing was sent. ${FOLLOW_WORDS}`,
+    "why nothing was sent. With queue, it waits behind the agent's turn instead, and answers " +
+    "`accepted` with `delivery` `queued` and how many messages stand `ahead` of it, or " +
+    `\`handed-on\` where the agent stood idle and it goes at once, unconfirmed, since a refusal puts it back and pauses the queue; and \`paused\` with why where ` +
+    "the queue stands paused, which sends nothing until the member resumes it in the app. " +
+    FOLLOW_WORDS,
   input: MessageAgentInputSchema,
   annotations: ADDITIVE,
   run: (asked) =>
