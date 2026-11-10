@@ -48,6 +48,7 @@ import {
 } from "@repo/features/description-comment-wire";
 import { NOTE_KIND } from "@repo/features/description-notes";
 import { INBOX_ANSWER_LEAD, INBOX_ASK, INBOX_REPLY, INBOX_STATUS } from "@repo/features/inbox-wire";
+import { INSTALLED_SKILL_SCOPE } from "@repo/features/installed-skill-wire";
 import { INTEGRATION_PROVIDER } from "@repo/features/integration-wire";
 import { PULL_REQUEST_ACTION } from "@repo/features/pull-request-write-wire";
 import { TASK_SECTION_WRITE } from "@repo/features/task-section-wire";
@@ -1595,6 +1596,39 @@ it.effect(
         returns[0]?.startsWith(`${ORIGIN}/api/account/integrations/connected?state=`),
         String(returns[0]),
       );
+    }),
+);
+
+it.effect(
+  "install_skill refuses a GitHub install without the commit its preview pinned, before reading the source",
+  () =>
+    Effect.gen(function* () {
+      const { auth, fetch } = yield* standing;
+      const member = yield* Effect.promise(() => signUp(auth));
+      const token = yield* Effect.promise(() =>
+        mintedToken(auth, member.cookie, {
+          clientId: MCP_CLIENT.id,
+          scope: [MEMBER_MCP_SCOPE.MCP],
+          resource: RESOURCE,
+        }),
+      );
+      const { client } = yield* connected(fetch, token, REVISION.MODERN);
+      const answer = decodeAnswer(
+        yield* Effect.promise(() =>
+          client.callTool({
+            name: MEMBER_MCP_TOOL.INSTALL_SKILL,
+            arguments: {
+              source: "anthropics/skills",
+              scope: INSTALLED_SKILL_SCOPE.PERSONAL,
+              skills: ["pdf"],
+            },
+          }),
+        ),
+      );
+      yield* Effect.promise(() => client.close());
+
+      assert.equal(answer.isError, true);
+      assert.match(answer.content[0].text, /call it first/u);
     }),
 );
 

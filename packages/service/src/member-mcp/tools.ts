@@ -93,6 +93,15 @@ import {
   inboxStartRequestSchema,
 } from "@repo/features/inbox-wire";
 import {
+  installedSkillInstallRequestSchema,
+  SKILL_PASTE_KIND,
+} from "@repo/features/installed-skill-route-wire";
+import {
+  INSTALLED_SKILL_MAIN_FILE,
+  INSTALLED_SKILL_REFUSAL,
+  type InstalledSkillRefusal,
+} from "@repo/features/installed-skill-wire";
+import {
   integrationConnectionNameSchema,
   integrationConnectionOf,
   integrationProviderSchema,
@@ -271,6 +280,14 @@ import { recordServerEvent, SERVER_EVENT } from "../events/server-events.js";
 import type { GitHubApp } from "../github/github-app.js";
 import { agentWorkspace } from "../github/workspace-repository.js";
 import type { HostedRefusal } from "../http/http-effect.js";
+import {
+  installSkills,
+  listSkills,
+  previewSkillPaste,
+  readSkill,
+  removeSkill,
+} from "../installed-skills/installed-skills.js";
+import { parseSkillPaste } from "../installed-skills/skill-paste.js";
 import type { IntegrationConnect } from "../integrations/integration-connect.js";
 import type { PageLinks } from "../pages/page-links.js";
 import type { ModelCatalog } from "../providers/model-catalog.js";
@@ -3610,6 +3627,296 @@ const EDIT_SANDBOX_SETUP_TOOL = memberMcpTool({
     ),
 });
 
+/*
+ * The installed skills (`../installed-skills/installed-skills.ts`), each
+ * through the operation Settings › Skills' procedures run, as the member:
+ * the store holds who may read, install, and remove what, so a tool adds
+ * no rule of its own. An install takes what Add skill sends once its
+ * preview is shown: the skills chosen by name from a GitHub source and the
+ * commit the preview pinned, or a text's name and description.
+ */
+
+/** Why a skill call was refused, in words the agent can act on. */
+const SKILL_TOOL_REFUSAL = {
+  NO_SKILL: "Not run: the member sees no installed skill of that id.",
+  NO_WORKSPACE: "Not run: the member belongs to no such workspace.",
+  NOT_INSTALLABLE:
+    "Not run: the member may no longer install skills in that workspace; nothing was installed.",
+  NOT_PERMITTED:
+    "Not run: the member may not remove that skill; a workspace's skill is removed by its " +
+    "installer and the workspace's owners and admins.",
+  NOT_REACHABLE:
+    "Not run: the workspace's GitHub installation does not reach that repository; the member " +
+    `adds it to the installation in ${PRODUCT_NAME}'s GitHub settings.`,
+  UNANSWERED: "Not run: GitHub or the store did not answer; nothing was installed. Try again.",
+  NOTHING_TO_INSTALL:
+    "Not run: nothing to install. From a GitHub source, name at least one skill as " +
+    `${MEMBER_MCP_TOOL.PREVIEW_SKILL_INSTALL} listed them; for a skill's text, give a name and ` +
+    "a summary where its frontmatter declares none; and a workspace skill is never " +
+    "installed in the member's personal workspace, where scope personal is the one there is.",
+  UNPINNED:
+    `Not run: a GitHub install takes the commit sha ${MEMBER_MCP_TOOL.PREVIEW_SKILL_INSTALL} ` +
+    "answered, so what installs is what the member was shown; call it first, show the member " +
+    "what it lists, and pass its sha.",
+  UNSUPPORTED:
+    "Not run: that is neither a GitHub repository, a link to one of its folders, an `npx " +
+    "skills add` line naming one, nor a skill's text; skills install from GitHub alone.",
+  NAME_TAKEN: (name: string) =>
+    `Not run: a skill named ${name} is already installed there, so nothing was installed.`,
+  FILES_REFUSED: (name: string, why: string) =>
+    `Not run: ${name}'s files were refused (${why}), so nothing was installed.`,
+} as const;
+
+/** A skill's refused files, in the agent's words. */
+const SKILL_FILES_WORDS: Readonly<Record<InstalledSkillRefusal, string>> = {
+  [INSTALLED_SKILL_REFUSAL.NO_SKILL_FILE]: `no ${INSTALLED_SKILL_MAIN_FILE} at its folder's root`,
+  [INSTALLED_SKILL_REFUSAL.SKILL_FILE_INVALID]: `its ${INSTALLED_SKILL_MAIN_FILE} names no valid skill or carries no summary`,
+  [INSTALLED_SKILL_REFUSAL.TOO_LARGE]: "a file is larger than a skill may hold",
+  [INSTALLED_SKILL_REFUSAL.CREDENTIAL]: "a file holds what looks like a credential",
+};
+
+/** What a skill call says where what it asked by is out of reach: the workspace or the skill. */
+interface SkillCallWords {
+  readonly notFound: string;
+  readonly notPermitted: string;
+}
+
+/** A call about a workspace: its list, a preview, or an install. */
+const ABOUT_WORKSPACE: SkillCallWords = {
+  notFound: SKILL_TOOL_REFUSAL.NO_WORKSPACE,
+  notPermitted: SKILL_TOOL_REFUSAL.NOT_INSTALLABLE,
+};
+
+/** A call about one skill: a read or a removal. */
+const ABOUT_SKILL: SkillCallWords = {
+  notFound: SKILL_TOOL_REFUSAL.NO_SKILL,
+  notPermitted: SKILL_TOOL_REFUSAL.NOT_PERMITTED,
+};
+
+/** A refusal from the skills' operation, in the agent's words, those naming what the call asked by its own. */
+function skillRefusalWords(refusal: HostedRefusal, words: SkillCallWords): string {
+  switch (refusal.error) {
+    case HOSTED_API_ERROR.NOT_FOUND:
+      return words.notFound;
+    case HOSTED_API_ERROR.NOT_PERMITTED:
+      return words.notPermitted;
+    case HOSTED_API_ERROR.REPOSITORY_NOT_REACHABLE:
+      return SKILL_TOOL_REFUSAL.NOT_REACHABLE;
+    case HOSTED_API_ERROR.INVALID_REQUEST:
+      return SKILL_TOOL_REFUSAL.NOTHING_TO_INSTALL;
+    case HOSTED_API_ERROR.SKILL_NAME_TAKEN:
+      return SKILL_TOOL_REFUSAL.NAME_TAKEN(refusal.skillName ?? "that");
+    case HOSTED_API_ERROR.SKILL_FILES_REFUSED:
+      return SKILL_TOOL_REFUSAL.FILES_REFUSED(
+        refusal.skillName ?? "a skill",
+        refusal.skillRefusal === undefined ? "invalid" : SKILL_FILES_WORDS[refusal.skillRefusal],
+      );
+    default:
+      return SKILL_TOOL_REFUSAL.UNANSWERED;
+  }
+}
+
+/** A skill call's answer: `accepted` with what the operation answered, or `rejected` in the refusal's words. */
+const skillAnswer = <A extends object, R>(
+  operation: Effect.Effect<A, HostedRefusal, R>,
+  words: SkillCallWords,
+): Effect.Effect<WireRecord, never, R> =>
+  Effect.match(operation, {
+    onFailure: (refusal) => agentToolRejected(skillRefusalWords(refusal, words)),
+    onSuccess: (answer) => ({ status: ACTION_RESULT_STATUS.ACCEPTED, ...answer }),
+  });
+
+/** A skill call about the workspace its slug names, or the member's only one, as the member. */
+const skillsInWorkspace = <R>(
+  slug: string | undefined,
+  run: (userId: string, workspaceId: string) => Effect.Effect<WireRecord, never, R>,
+) =>
+  Effect.gen(function* () {
+    const member = yield* AdmittedMember;
+    const workspace = yield* listedWorkspace(member.userId, slug);
+    if (Result.isFailure(workspace)) return agentToolRejected(workspace.failure);
+    return yield* run(member.userId, workspace.success);
+  });
+
+/** A skill call about one skill by its id, as the member. */
+const skillAsMember = <R>(run: (userId: string) => Effect.Effect<WireRecord, never, R>) =>
+  Effect.flatMap(AdmittedMember, (member) => run(member.userId));
+
+/** The workspace a skill call is about, by its slug. */
+const SKILL_WORKSPACE_INPUT = Schema.optionalKey(
+  describeWire(
+    Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(WORKSPACE_BOUNDS.MAX_SLUG_CHARS)),
+    `The workspace, by the slug ${MEMBER_MCP_TOOL.LIST_WORKSPACES} answered, whose skills to ` +
+      "list or whose GitHub installation reads a source; leave it out where the member belongs " +
+      "to one workspace alone.",
+  ),
+);
+
+/** A skill by its id. */
+const SkillIdInputSchema = Schema.Struct({
+  skillId: describeWire(
+    Schema.String.check(Schema.isNonEmpty()),
+    `The installed skill's id, as ${MEMBER_MCP_TOOL.LIST_INSTALLED_SKILLS} answered it.`,
+  ),
+});
+
+/** What to install from, as the member would paste it into Add skill. */
+const SKILL_SOURCE_INPUT = describeWire(
+  installedSkillInstallRequestSchema.fields.text,
+  "What to install from, as the member would paste it into Add skill: a GitHub repository " +
+    "(owner/name or its address), a link to one of its folders, an `npx skills add` line " +
+    "naming one, or a skill's own SKILL.md text.",
+);
+
+const ListInstalledSkillsInputSchema = Schema.Struct({ workspace: SKILL_WORKSPACE_INPUT });
+
+const PreviewSkillInstallInputSchema = Schema.Struct({
+  workspace: SKILL_WORKSPACE_INPUT,
+  source: SKILL_SOURCE_INPUT,
+});
+
+const InstallSkillInputSchema = Schema.Struct({
+  workspace: SKILL_WORKSPACE_INPUT,
+  source: SKILL_SOURCE_INPUT,
+  scope: describeWire(
+    installedSkillInstallRequestSchema.fields.scope,
+    "Whose the skills are: personal, the member's alone in every workspace they belong to; or " +
+      "workspace, offered to the agents of every member of the workspace, never in the " +
+      "member's personal workspace.",
+  ),
+  skills: Schema.optionalKey(
+    describeWire(
+      Schema.Array(Schema.NonEmptyString),
+      `From a GitHub source, the skills to install by name, as ` +
+        `${MEMBER_MCP_TOOL.PREVIEW_SKILL_INSTALL} listed them; at least one.`,
+    ),
+  ),
+  sha: Schema.optionalKey(
+    describeWire(
+      installedSkillInstallRequestSchema.fields.sha.schema,
+      `From a GitHub source, the commit ${MEMBER_MCP_TOOL.PREVIEW_SKILL_INSTALL} answered, so ` +
+        "the files installed are the ones the member was shown.",
+    ),
+  ),
+  name: Schema.optionalKey(
+    describeWire(
+      Schema.NonEmptyString,
+      "For a skill's text, the name to install it by; its frontmatter's where left out.",
+    ),
+  ),
+  description: Schema.optionalKey(
+    describeWire(
+      Schema.NonEmptyString,
+      "For a skill's text, the summary to install it by, which tells agents when to use it; its " +
+        "frontmatter's where left out.",
+    ),
+  ),
+});
+
+const LIST_INSTALLED_SKILLS_TOOL = memberMcpTool({
+  name: MEMBER_MCP_TOOL.LIST_INSTALLED_SKILLS,
+  description:
+    "List the skills installed into a workspace the member belongs to that the member's " +
+    "agents load, as Settings › Skills lists them: the workspace's, then the member's own " +
+    "personal ones. " +
+    `${WORKSPACE_WORDS} Answers \`accepted\` with each skill's id, name, summary, scope ` +
+    "(personal or workspace), where its files came from, and whether the member may remove " +
+    "it (manageable), or `rejected` and why.",
+  input: ListInstalledSkillsInputSchema,
+  annotations: READ_ONLY,
+  run: ({ workspace }) =>
+    skillsInWorkspace(workspace, (userId, workspaceId) =>
+      skillAnswer(listSkills(userId, workspaceId), ABOUT_WORKSPACE),
+    ),
+});
+
+const READ_INSTALLED_SKILL_TOOL = memberMcpTool({
+  name: MEMBER_MCP_TOOL.READ_INSTALLED_SKILL,
+  description:
+    "Read one installed skill the member sees, by its id, as its View in Settings › Skills " +
+    `shows it: its ${INSTALLED_SKILL_MAIN_FILE} whole, and every file it holds with its size. ` +
+    "Answers `accepted` with them, or `rejected` and why.",
+  input: SkillIdInputSchema,
+  annotations: READ_ONLY,
+  run: ({ skillId }) =>
+    skillAsMember((userId) => skillAnswer(readSkill(userId, skillId), ABOUT_SKILL)),
+});
+
+const PREVIEW_SKILL_INSTALL_TOOL = memberMcpTool({
+  name: MEMBER_MCP_TOOL.PREVIEW_SKILL_INSTALL,
+  description:
+    "Read what installing from a source would install, as Add skill in Settings › Skills " +
+    "shows it before its Install, installing nothing. A GitHub source is read at the commit " +
+    "its ref stands at now, through the workspace's GitHub installation, and every skill " +
+    "folder there is listed, with the ones the source names marked selected; a skill's text " +
+    "answers the name and summary its frontmatter declares. Installing a skill hands " +
+    "outside instructions to the member's agents, so show the member what this answers " +
+    `before ${MEMBER_MCP_TOOL.INSTALL_SKILL}. ${WORKSPACE_WORDS} Answers \`accepted\` with ` +
+    "kind source (the repository, its ref, the commit sha, and its skills), or kind text, or " +
+    "`rejected` and why.",
+  input: PreviewSkillInstallInputSchema,
+  annotations: READ_ONLY,
+  run: ({ workspace, source }) =>
+    skillsInWorkspace(workspace, (userId, workspaceId) =>
+      Effect.map(
+        skillAnswer(previewSkillPaste(userId, { text: source, workspaceId }), ABOUT_WORKSPACE),
+        // Note that a paste the preview reads as neither source nor text is answered as no preview at all.
+        (answer) =>
+          answer.kind === SKILL_PASTE_KIND.UNSUPPORTED
+            ? agentToolRejected(SKILL_TOOL_REFUSAL.UNSUPPORTED)
+            : answer,
+      ),
+    ),
+});
+
+const INSTALL_SKILL_TOOL = memberMcpTool({
+  name: MEMBER_MCP_TOOL.INSTALL_SKILL,
+  description:
+    "Install skills from a source for the member's agents, as Add skill's Install in " +
+    `Settings › Skills does once its preview is shown: call ${MEMBER_MCP_TOOL.PREVIEW_SKILL_INSTALL} ` +
+    "first, show the member what it answered, and install only what they chose. From a GitHub " +
+    "source, name the skills to install and pass the commit sha the preview answered, so the " +
+    "files installed are the ones shown; from a skill's text, give its name and summary " +
+    "where its frontmatter declares none. Every skill asked is installed or none is. " +
+    `${WORKSPACE_WORDS} Answers \`accepted\` with the skills installed, each with its id, or ` +
+    "`rejected` and why, such as a name already taken.",
+  input: InstallSkillInputSchema,
+  annotations: ADDITIVE,
+  run: ({ workspace, source, ...asked }) =>
+    // Note that a GitHub install takes the commit its preview pinned, as Add skill's always does, so what installs is what the member was shown.
+    parseSkillPaste(source).kind === SKILL_PASTE_KIND.SOURCE && asked.sha === undefined
+      ? Effect.succeed(agentToolRejected(SKILL_TOOL_REFUSAL.UNPINNED))
+      : skillsInWorkspace(workspace, (userId, workspaceId) =>
+          skillAnswer(
+            Effect.map(
+              installSkills(userId, { ...asked, text: source, workspaceId }),
+              (installed) => ({ skills: installed.skills }),
+            ),
+            ABOUT_WORKSPACE,
+          ),
+        ),
+});
+
+const REMOVE_INSTALLED_SKILL_TOOL = memberMcpTool({
+  name: MEMBER_MCP_TOOL.REMOVE_INSTALLED_SKILL,
+  description:
+    "Remove an installed skill the member may remove, by its id, with its files, as its " +
+    "Delete in Settings › Skills does: agents started afterwards no longer load it, a " +
+    "workspace's skill for every member of the workspace, and installing it again takes its " +
+    "source again. The member may remove their own personal skills, and a workspace's skill " +
+    "they installed or, as an owner or admin, any of the workspace's. Remove one only when " +
+    "the member asks for it. Answers `accepted` with the skill's id, or `rejected` and why.",
+  input: SkillIdInputSchema,
+  annotations: DESTRUCTIVE,
+  run: ({ skillId }) =>
+    skillAsMember((userId) =>
+      skillAnswer(
+        Effect.map(removeSkill(userId, skillId), (removed) => ({ removed: removed.id })),
+        ABOUT_SKILL,
+      ),
+    ),
+});
+
 /** Every tool the server offers, listed in the order an agent reads them. */
 /**
  * The workspace experiments on in one of the member's workspaces at least,
@@ -3702,4 +4009,9 @@ export const MEMBER_MCP_TOOLS: readonly MemberMcpTool[] = [
   DISCONNECT_SENTRY_TOOL,
   READ_SANDBOX_SETUP_TOOL,
   EDIT_SANDBOX_SETUP_TOOL,
+  LIST_INSTALLED_SKILLS_TOOL,
+  READ_INSTALLED_SKILL_TOOL,
+  PREVIEW_SKILL_INSTALL_TOOL,
+  INSTALL_SKILL_TOOL,
+  REMOVE_INSTALLED_SKILL_TOOL,
 ];
