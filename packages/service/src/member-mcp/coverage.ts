@@ -119,6 +119,13 @@ export const MEMBER_MCP_COVERAGE = {
   [MEMBER_MCP_TOOL.UPDATE_AGENT]: { agents: ["change"] },
   [MEMBER_MCP_TOOL.LIST_AGENT_PORTS]: { agentPorts: ["list", "shared"] },
   [MEMBER_MCP_TOOL.SHARE_AGENT_PORT]: { agentPorts: ["share", "unshare"] },
+  [MEMBER_MCP_TOOL.LIST_REPOSITORIES]: { github: ["repositories", "tokenRepositories"] },
+  [MEMBER_MCP_TOOL.SET_TOKEN_REPOSITORY]: { github: ["setTokenRepository"] },
+  [MEMBER_MCP_TOOL.READ_REPOSITORY_FILE]: { github: ["repositoryFile"] },
+  [MEMBER_MCP_TOOL.LIST_REPOSITORY_FOLDER]: { github: ["repositoryTree"] },
+  [MEMBER_MCP_TOOL.LIST_REPOSITORY_SKILLS]: { github: ["repositorySkills"] },
+  [MEMBER_MCP_TOOL.READ_GITHUB_ISSUE]: { github: ["repositoryPullRequest", "repositoryIssue"] },
+  [MEMBER_MCP_TOOL.READ_GITHUB_CONNECTION]: { github: ["connection"] },
   [MEMBER_MCP_TOOL.LIST_AGENT_BROWSER_TABS]: { agentBrowserTabs: ["agentList", "list"] },
   [MEMBER_MCP_TOOL.OPEN_AGENT_BROWSER_TAB]: { agentBrowserTabs: ["agentOpen", "open"] },
   [MEMBER_MCP_TOOL.TAKE_OVER_AGENT_BROWSER_TAB]: {
@@ -269,17 +276,8 @@ export const MEMBER_MCP_EXCLUSIONS = {
   github: {
     connect: NEEDS_BROWSER,
     claim: NEEDS_BROWSER,
-    connection: NOT_YET_BUILT,
     // Note that Better Auth's unlink asks a fresh session, which no OAuth token is, so it stays the app's.
     disconnect: SECURITY,
-    repositories: NOT_YET_BUILT,
-    tokenRepositories: NOT_YET_BUILT,
-    setTokenRepository: NOT_YET_BUILT,
-    repositoryFile: NOT_YET_BUILT,
-    repositoryTree: NOT_YET_BUILT,
-    repositorySkills: NOT_YET_BUILT,
-    repositoryPullRequest: NOT_YET_BUILT,
-    repositoryIssue: NOT_YET_BUILT,
   },
   githubToken: { read: SECRET, save: SECRET, remove: SECRET },
   hosts: {

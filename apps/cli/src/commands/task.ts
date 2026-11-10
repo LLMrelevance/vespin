@@ -27,7 +27,6 @@ import {
   TASK_STATUS_ORDER,
   TASK_TREE_ENTRY,
   type Task,
-  type TaskFileRefusal,
   type TaskPullRequestLine,
   type TaskRelationKind,
   type TaskSummary,
@@ -36,6 +35,7 @@ import { taskKey } from "@repo/features/workspace-key";
 import type { Workspace } from "@repo/features/workspace-wire";
 import { Effect, Option } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
+import { fileRefused } from "../file-refusal.js";
 import { originRepository } from "../git.js";
 import { answer, CommandFailed, columns, confirmOrYes, note, readInput } from "../output.js";
 import { askService, session } from "../session.js";
@@ -669,27 +669,6 @@ function memberIdOf(taskId: string, named: string) {
 const taskArgument = Argument.String("task").pipe(
   Argument.withDescription("The task, by its id, its number, or its key such as ACME-42"),
 );
-
-/** Why the service read no file or listed no folder, as a person reads it. */
-const FILE_REFUSAL_WORDS = {
-  [TASK_FILE_REFUSAL.SECRET]: "The file may hold a secret, so its contents are never read.",
-  [TASK_FILE_REFUSAL.MISSING]: "Nothing of that kind stands at that path.",
-  [TASK_FILE_REFUSAL.NOT_TEXT]: "The file is too large, or not text.",
-  [TASK_FILE_REFUSAL.NO_REPOSITORY]: "The task has no repository yet.",
-  [TASK_FILE_REFUSAL.NOT_REACHABLE]:
-    "The workspace's GitHub installation does not reach the task's repository.",
-  [TASK_FILE_REFUSAL.UNAVAILABLE]: "GitHub did not answer just now; try again shortly.",
-} as const satisfies Record<TaskFileRefusal, string>;
-
-/** A refused read as the command's failure, naming the branch GitHub found nothing on. */
-function fileRefused(refused: { readonly refusal: TaskFileRefusal; readonly branch?: string }) {
-  const words = FILE_REFUSAL_WORDS[refused.refusal];
-  return new CommandFailed({
-    exit:
-      refused.refusal === TASK_FILE_REFUSAL.UNAVAILABLE ? CLI_EXIT.UNAVAILABLE : CLI_EXIT.REFUSED,
-    message: refused.branch === undefined ? words : `${words} (read on ${refused.branch})`,
-  });
-}
 
 const commitFlag = Flag.String("commit").pipe(
   Flag.withDescription(
