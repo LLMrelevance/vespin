@@ -171,7 +171,7 @@ import { copyThroughShell, useCopyToast } from "../copy-feedback.js";
 import { failureShown, unreadShown } from "../failure-report.js";
 import { useFindOpen } from "../find-in-tab.js";
 import { useMemberDirectory, usePerson } from "../member-directory.js";
-import { TOAST_HOLD, useToast } from "../toast.js";
+import { useToast } from "../toast.js";
 import { appStateQuery, selectAppSettingsView } from "../use-app-state.js";
 import { type FindRow, useVirtualFind } from "../virtual-find.js";
 import {
@@ -3506,7 +3506,6 @@ function AgentTabBody({
         replayUnmasked: true,
         words: MESSAGE_GONE,
         tone: STATUS_TONE.DANGER,
-        hold: TOAST_HOLD.FAILED,
         failure: {
           surface: FAILURE_SURFACE.MESSAGE_REVEAL,
           cause: FAILURE_CONDITION.GONE,
@@ -3532,7 +3531,6 @@ function AgentTabBody({
               toast({
                 words: result.reason,
                 tone: STATUS_TONE.DANGER,
-                hold: TOAST_HOLD.FAILED,
                 failure: {
                   surface: FAILURE_SURFACE.AGENT_ARCHIVE,
                   cause: result,

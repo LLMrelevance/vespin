@@ -10,7 +10,7 @@ import { type ReactNode, type RefObject, useCallback, useEffect, useRef, useStat
 import { useConnected } from "../connection.js";
 import { failureShown } from "../failure-report.js";
 import { usePerson } from "../member-directory.js";
-import { TOAST_HOLD, useToast } from "../toast.js";
+import { useToast } from "../toast.js";
 import { AgentComposer } from "./agent-composer.js";
 import { teammateStarter } from "./agent-model.js";
 import { useInboxAcknowledger } from "./inbox-acknowledge.js";
@@ -262,7 +262,6 @@ function AnswerCard({
           replayUnmasked: true,
           words: result.reason,
           tone: STATUS_TONE.DANGER,
-          hold: TOAST_HOLD.FAILED,
           failure: {
             surface: FAILURE_SURFACE.AGENT_ARCHIVE,
             cause: result,
