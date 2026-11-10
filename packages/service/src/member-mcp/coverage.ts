@@ -117,6 +117,9 @@ export const MEMBER_MCP_COVERAGE = {
   [MEMBER_MCP_TOOL.MESSAGE_AGENT]: { messages: ["send", "queue"] },
   [MEMBER_MCP_TOOL.STOP_AGENT]: { agents: ["stop"] },
   [MEMBER_MCP_TOOL.UPDATE_AGENT]: { agents: ["change"] },
+  [MEMBER_MCP_TOOL.REWIND_AGENT]: { agents: ["rewind"] },
+  [MEMBER_MCP_TOOL.DELETE_AGENT]: { agents: ["delete"] },
+  [MEMBER_MCP_TOOL.WAKE_AGENT]: { agents: ["sandboxResume", "warm"] },
   [MEMBER_MCP_TOOL.LIST_AGENT_PORTS]: { agentPorts: ["list", "shared"] },
   [MEMBER_MCP_TOOL.SHARE_AGENT_PORT]: { agentPorts: ["share", "unshare"] },
   [MEMBER_MCP_TOOL.LIST_REPOSITORIES]: { github: ["repositories", "tokenRepositories"] },
@@ -259,12 +262,8 @@ export const MEMBER_MCP_EXCLUSIONS = {
   },
   agentPages: { frame: SCREEN_ONLY },
   agents: {
-    delete: NOT_YET_BUILT,
-    warm: NOT_YET_BUILT,
-    rewind: NOT_YET_BUILT,
     reviewOptions: SCREEN_ONLY,
     workspaceTools: SCREEN_ONLY,
-    sandboxResume: NOT_YET_BUILT,
     // Note that a Terminal tab is interactive, so the CLI's `vespin agent shell` reaches it and no tool does.
     terminals: SCREEN_ONLY,
     openTerminal: SCREEN_ONLY,
