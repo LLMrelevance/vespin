@@ -62,8 +62,16 @@ export const MEMBER_MCP_EXCLUSION_REASON = {
 export type MemberMcpExclusionReason =
   (typeof MEMBER_MCP_EXCLUSION_REASON)[keyof typeof MEMBER_MCP_EXCLUSION_REASON];
 
-const { SCREEN_ONLY, NEEDS_BROWSER, SECRET, SECURITY, DESTRUCTIVE, INTERNAL, RETIRED } =
-  MEMBER_MCP_EXCLUSION_REASON;
+const {
+  SCREEN_ONLY,
+  NEEDS_BROWSER,
+  SECRET,
+  SECURITY,
+  DESTRUCTIVE,
+  INTERNAL,
+  RETIRED,
+  NOT_YET_BUILT,
+} = MEMBER_MCP_EXCLUSION_REASON;
 
 /** Each tool's procedures: at least one, so no row stands empty. */
 export const MEMBER_MCP_COVERAGE = {
@@ -305,6 +313,7 @@ export const MEMBER_MCP_EXCLUSIONS = {
   },
   inbox: {
     home: SCREEN_ONLY,
+    takeBack: NOT_YET_BUILT,
   },
   integrations: {
     github: NEEDS_BROWSER,
