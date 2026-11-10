@@ -105,6 +105,11 @@ export const MEMBER_MCP_TOOL = {
   REVOKE_MCP_CLIENT: "revoke_mcp_client",
   LIST_SENTRY_INSTALLATIONS: "list_sentry_installations",
   DISCONNECT_SENTRY: "disconnect_sentry",
+  READ_SLACK_BOT: "read_slack_bot",
+  UPDATE_SLACK_BOT: "update_slack_bot",
+  DISCONNECT_SLACK_BOT: "disconnect_slack_bot",
+  LIST_REPOSITORY_PINS: "list_repository_pins",
+  PIN_REPOSITORY: "pin_repository",
 } as const;
 
 export type MemberMcpToolName = (typeof MEMBER_MCP_TOOL)[keyof typeof MEMBER_MCP_TOOL];

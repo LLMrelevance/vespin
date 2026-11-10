@@ -209,6 +209,13 @@ export const MEMBER_MCP_COVERAGE = {
   [MEMBER_MCP_TOOL.REVOKE_MCP_CLIENT]: { mcpClients: ["revoke"] },
   [MEMBER_MCP_TOOL.LIST_SENTRY_INSTALLATIONS]: { workspaceSentry: ["installations"] },
   [MEMBER_MCP_TOOL.DISCONNECT_SENTRY]: { workspaceSentry: ["disconnect"] },
+  [MEMBER_MCP_TOOL.READ_SLACK_BOT]: { workspaceSlackBot: ["read"] },
+  [MEMBER_MCP_TOOL.UPDATE_SLACK_BOT]: {
+    workspaceSlackBot: ["read", "notifications", "repository", "channel"],
+  },
+  [MEMBER_MCP_TOOL.DISCONNECT_SLACK_BOT]: { workspaceSlackBot: ["disconnect"] },
+  [MEMBER_MCP_TOOL.LIST_REPOSITORY_PINS]: { repositoryPins: ["list"] },
+  [MEMBER_MCP_TOOL.PIN_REPOSITORY]: { repositoryPins: ["set"] },
 } as const satisfies Record<MemberMcpToolName, HostedProcedureNames>;
 
 type Coverage = typeof MEMBER_MCP_COVERAGE;
@@ -352,7 +359,6 @@ export const MEMBER_MCP_EXCLUSIONS = {
   macCommands: { waiting: INTERNAL, settle: INTERNAL, claim: INTERNAL, listening: INTERNAL },
   pullRequests: { reviewOptions: SCREEN_ONLY },
   pushDevices: { register: INTERNAL, unregister: INTERNAL, status: INTERNAL, notify: INTERNAL },
-  repositoryPins: { list: NOT_YET_BUILT, set: NOT_YET_BUILT },
   supportAccess: { grant: SECURITY, revoke: SECURITY },
   taskFiles: {
     skills: SCREEN_ONLY,
@@ -367,14 +373,7 @@ export const MEMBER_MCP_EXCLUSIONS = {
     offer: NEEDS_BROWSER,
   },
   workspaceSentry: { install: NEEDS_BROWSER },
-  workspaceSlackBot: {
-    read: NOT_YET_BUILT,
-    connect: NEEDS_BROWSER,
-    disconnect: NOT_YET_BUILT,
-    notifications: NOT_YET_BUILT,
-    repository: NOT_YET_BUILT,
-    channel: NOT_YET_BUILT,
-  },
+  workspaceSlackBot: { connect: NEEDS_BROWSER },
   workspaces: {
     create: NOT_YET_BUILT,
     rename: NOT_YET_BUILT,

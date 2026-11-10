@@ -120,4 +120,9 @@ export const MEMBER_MCP_CLI_PARITY = {
   [MEMBER_MCP_TOOL.REVOKE_MCP_CLIENT]: { command: ["mcp", "revoke"] },
   [MEMBER_MCP_TOOL.LIST_SENTRY_INSTALLATIONS]: { command: ["sentry", "list"] },
   [MEMBER_MCP_TOOL.DISCONNECT_SENTRY]: { command: ["sentry", "disconnect"] },
+  [MEMBER_MCP_TOOL.READ_SLACK_BOT]: { command: ["slack", "show"] },
+  [MEMBER_MCP_TOOL.UPDATE_SLACK_BOT]: { command: ["slack", "set"] },
+  [MEMBER_MCP_TOOL.DISCONNECT_SLACK_BOT]: { command: ["slack", "disconnect"] },
+  [MEMBER_MCP_TOOL.LIST_REPOSITORY_PINS]: { command: ["repo", "pins"] },
+  [MEMBER_MCP_TOOL.PIN_REPOSITORY]: { command: ["repo", "pin"] },
 } as const satisfies Record<MemberMcpToolName, McpCliRow>;

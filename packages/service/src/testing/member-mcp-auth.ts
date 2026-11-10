@@ -67,6 +67,7 @@ import {
 } from "../member-mcp/resource.js";
 import { PageLinks } from "../pages/page-links.js";
 import { modelCatalogOf } from "../providers/model-catalog.js";
+import { SlackBot, slackBotOver } from "../slack/slack-bot.js";
 import { SentryApp, sentryAppService } from "../triggers/sentry/sentry-app-config.js";
 import { FAKE_IMAGE } from "./agent-browser-fake.js";
 import { NO_GITHUB } from "./github-app-fake.js";
@@ -241,6 +242,7 @@ export function memberMcpStanding(options: MemberMcpStandingOptions = {}) {
       Layer.succeed(PageLinks, { sandbox: undefined }),
       pullRequestLinksLayer,
       options.integrations ?? integrationConnectOf(() => CONNECTOR_ASKED_NOTHING),
+      Layer.succeed(SlackBot, slackBotOver(undefined)),
     );
     yield* seedRows.pipe(Effect.provide(services));
     // The key set is fetched from the auth service over HTTP, as on a deployment: here the in-process handler, and nothing else answers.
