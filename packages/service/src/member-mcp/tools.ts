@@ -64,6 +64,7 @@ import {
   AGENT_STATUS,
   CHANGED_FILE_STATUS,
   CHECK_SUMMARY,
+  contextWindowSchema,
   disabledServersSchema,
   PULL_REQUEST_STATE,
 } from "@repo/features/agent-wire";
@@ -92,6 +93,7 @@ import { commitShaSchema } from "@repo/features/link-grammar";
 import { MEMBER_MCP_TOOL, type MemberMcpToolName } from "@repo/features/member-mcp-tool";
 import { MEMORY_BOUNDS, memoryIdSchema } from "@repo/features/memory-wire";
 import { agentName } from "@repo/features/model-label";
+import { modelChoiceSchema } from "@repo/features/models-wire";
 import { PAGE_OWNER } from "@repo/features/page-wire";
 import { PRODUCT_NAME } from "@repo/features/product-name";
 import {
@@ -126,6 +128,8 @@ import {
 import { describeWire, type StandardSchemaWithJson, standardSchemaOf } from "@repo/wire/effect";
 import { Effect, Option, Result, Schema } from "effect";
 import type { HttpClient } from "effect/http";
+import { writeOwnPreferences } from "../accounts/account-preferences.js";
+import { accountProcedureSeams } from "../accounts/account-seams.js";
 import { forgetWorkspaceMemory, WORKSPACE_MEMORY } from "../accounts/workspace-memories.js";
 import { workspaceMembersRead, workspaceSlugSet } from "../accounts/workspace-operations.js";
 import {
@@ -809,6 +813,70 @@ const IDEMPOTENT_CHANGE: ToolAnnotations = {
   destructiveHint: false,
   idempotentHint: true,
 };
+
+/** A change of the member's preferences names their coding agents' default model and effort together, and at most its context window. */
+const UpdatePreferencesInputSchema = Schema.Struct({
+  model: describeWire(
+    modelChoiceSchema.fields.model,
+    `The default model, by its catalog id as ${MEMBER_MCP_TOOL.LIST_MODELS} answers it.`,
+  ),
+  effort: describeWire(
+    modelChoiceSchema.fields.effort,
+    "The default reasoning effort, as the model lists it.",
+  ),
+  contextWindow: Schema.optionalKey(
+    describeWire(
+      contextWindowSchema,
+      "The default context window, standard or long; leave it out for the model's standard one.",
+    ),
+  ),
+});
+
+/** Why a change of the member's preferences took nothing, in words for one acting for the member. */
+const UPDATE_PREFERENCES_REFUSAL = {
+  NOT_OFFERED:
+    "Not changed: the member is not offered that model and effort, or no credential of theirs " +
+    `pays for that model; ${MEMBER_MCP_TOOL.LIST_MODELS} lists the choices.`,
+  UNAVAILABLE:
+    "Not changed: the model catalog or the member's preferences could not be read; try again.",
+} as const;
+
+/**
+ * `update_preferences`: the member's coding agents' default, written as
+ * their Settings writes it (`writeOwnPreferences`), so a choice the catalog
+ * does not offer them, or one no credential of theirs pays for, is refused
+ * as Settings is.
+ */
+const UPDATE_PREFERENCES_TOOL = memberMcpTool({
+  name: MEMBER_MCP_TOOL.UPDATE_PREFERENCES,
+  description:
+    "Change the member's own preferences, as their Settings would: the default model and " +
+    "effort their coding agents start on where a start names neither, and its context window, " +
+    `as ${MEMBER_MCP_TOOL.LIST_MODELS} lists them. The default is the member's own, the same ` +
+    "in every workspace, and agents already started keep the model they run on. Answers " +
+    "`accepted` with the default as it then stands, or `rejected` and why; " +
+    `${MEMBER_MCP_TOOL.LIST_MODELS} reads it back.`,
+  input: UpdatePreferencesInputSchema,
+  annotations: IDEMPOTENT_CHANGE,
+  run: (agent) =>
+    Effect.flatMap(AdmittedMember, (member) =>
+      writeOwnPreferences(accountProcedureSeams(), member.userId, { agent }).pipe(
+        Effect.map((written) => ({
+          status: ACTION_RESULT_STATUS.ACCEPTED,
+          default: written.agent,
+        })),
+        Effect.catch((refusal) =>
+          Effect.succeed(
+            agentToolRejected(
+              refusal.error === HOSTED_API_ERROR.INVALID_REQUEST
+                ? UPDATE_PREFERENCES_REFUSAL.NOT_OFFERED
+                : UPDATE_PREFERENCES_REFUSAL.UNAVAILABLE,
+            ),
+          ),
+        ),
+      ),
+    ),
+});
 
 /** A write that may take something away, such as a turn under way, an archived agent's place, or a section, which the same call made again leaves as it stood. */
 const DESTRUCTIVE: ToolAnnotations = {
@@ -2905,6 +2973,7 @@ export const MEMBER_MCP_TOOLS: readonly MemberMcpTool[] = [
   READ_TASK_FILE_TOOL,
   LIST_TASK_FOLDER_TOOL,
   MEMBER_LIST_MODELS_TOOL,
+  UPDATE_PREFERENCES_TOOL,
   MEMBER_CREATE_TASK_TOOL,
   MEMBER_UPDATE_TASK_TOOL,
   MEMBER_EDIT_DESCRIPTION_TOOL,

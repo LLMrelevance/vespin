@@ -88,6 +88,7 @@ export const MEMBER_MCP_COVERAGE = {
     ],
   },
   [MEMBER_MCP_TOOL.LIST_MODELS]: { models: ["list"], account: ["preferences"] },
+  [MEMBER_MCP_TOOL.UPDATE_PREFERENCES]: { account: ["writePreferences"] },
   [MEMBER_MCP_TOOL.READ_PAGE]: { taskFiles: ["pages", "page"], agentPages: ["list", "version"] },
   [MEMBER_MCP_TOOL.READ_TASK_FILE]: { taskFiles: ["file"] },
   [MEMBER_MCP_TOOL.LIST_TASK_FOLDER]: { taskFiles: ["tree"] },
@@ -181,7 +182,6 @@ export const MEMBER_MCP_EXCLUSIONS = {
   account: {
     access: INTERNAL,
     active: INTERNAL,
-    writePreferences: NOT_YET_BUILT,
     providerKeys: SECRET,
     saveProviderKey: SECRET,
     setProviderKeyForAgents: SECRET,

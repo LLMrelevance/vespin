@@ -20,6 +20,7 @@ import { mcpCommand } from "./mcp.js";
 import { memoryCommand } from "./memory.js";
 import { modelsCommand } from "./models.js";
 import { prCommand } from "./pr.js";
+import { preferencesCommand } from "./preferences.js";
 import { sectionCommand } from "./section.js";
 import { taskCommand } from "./task.js";
 import { updateCommand } from "./update.js";
@@ -39,6 +40,7 @@ export const COMMANDS = [
   memoryCommand,
   automationCommand,
   modelsCommand,
+  preferencesCommand,
   keysCommand,
   mcpCommand,
   apiCommand,

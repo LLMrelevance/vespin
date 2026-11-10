@@ -24,6 +24,7 @@ export const MEMBER_MCP_TOOL = {
   READ_AGENT_CHANGES: "read_agent_changes",
   READ_AGENT_TRANSCRIPT: "read_agent_transcript",
   LIST_MODELS: AGENT_TOOL.LIST_MODELS,
+  UPDATE_PREFERENCES: "update_preferences",
   READ_PAGE: AGENT_TOOL.READ_PAGE,
   READ_TASK_FILE: "read_task_file",
   LIST_TASK_FOLDER: "list_task_folder",
