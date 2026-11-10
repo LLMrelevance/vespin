@@ -56,6 +56,7 @@ import { EXPERIMENT, WORKSPACE_EXPERIMENT_LIST } from "@repo/settings";
 import { settleJsonSchemaGolden } from "@repo/wire/testing";
 import { eq, sql } from "drizzle-orm";
 import { Clock, DateTime, Effect, Option, Result, Schema } from "effect";
+import { TestClock } from "effect/testing";
 import { afterEach, vi } from "vitest";
 import { readWorkspaceMemories, WORKSPACE_MEMORY } from "../accounts/workspace-memories.js";
 import { recordMemberDescriptionNotes } from "../agents/coder-host/description-edit.js";
@@ -596,6 +597,12 @@ it.effect(
           { userId: stranger.userId, taskId: task.id },
           { notes: [DESCRIPTION_NOTE] },
         );
+        // A later save, past the window that joins it to the first, so revision 1 holds text the description no longer does.
+        yield* TestClock.adjust("11 minutes");
+        yield* recordMemberDescriptionNotes(
+          { userId: stranger.userId, taskId: task.id },
+          { notes: [{ ...DESCRIPTION_NOTE, text: "Invoices lag." }] },
+        );
         const { text } = Option.getOrThrow(yield* readTask(stranger.userId, task.id));
         const from = text.indexOf(DESCRIPTION_NOTE.text);
         const started = yield* startDescriptionCommentThread(
@@ -630,6 +637,7 @@ it.effect(
           memoryId: kept.memory.id,
           automationId: Option.getOrThrow(automation).id,
           agentId: yield* openTaskAgent(stranger.userId, elsewhere, task.id),
+          revisions: yield* listRevisions(stranger.userId, task.id),
         };
       }).pipe(Effect.provide(services));
       const token = yield* Effect.promise(() =>
@@ -651,6 +659,9 @@ it.effect(
             MEMBER_MCP_TOOL.EDIT_DESCRIPTION,
             { taskId, notes: [{ kind: NOTE_KIND.ADD, section: "Problem", text: "Planted." }] },
           ],
+          [MEMBER_MCP_TOOL.LIST_DESCRIPTION_REVISIONS, { taskId }],
+          [MEMBER_MCP_TOOL.READ_DESCRIPTION_REVISION, { taskId, seq: 1 }],
+          [MEMBER_MCP_TOOL.RESTORE_DESCRIPTION_REVISION, { taskId, seq: 1 }],
           [MEMBER_MCP_TOOL.CREATE_SECTION, { workspace, title: "Planted" }],
           [MEMBER_MCP_TOOL.DELETE_SECTION, { sectionId: rows.sectionId }],
           [MEMBER_MCP_TOOL.START_AGENT, { taskId }],
@@ -708,6 +719,7 @@ it.effect(
       const after = yield* Effect.gen(function* () {
         return {
           task: yield* readTask(stranger.userId, taskId),
+          revisions: yield* listRevisions(stranger.userId, taskId),
           sections: yield* listTaskSections(stranger.userId),
           agent: yield* readAgent(stranger.userId, agentId),
           threads: yield* readDescriptionCommentThreads(stranger.userId, taskId),
@@ -725,12 +737,19 @@ it.effect(
         assert.ok(
           !answer.text.includes(taskId) &&
             !answer.text.includes(rows.elsewhere) &&
-            !answer.text.includes("A stranger's"),
+            !answer.text.includes("A stranger's") &&
+            !answer.text.includes("Invoices lag."),
         );
       }
       const task = Option.getOrThrow(after.task);
       assert.equal(task.task.name, "A stranger's task");
+      // Revision 1 is the first save alone, so a restore of it would have changed the description and added a revision.
+      assert.deepEqual(
+        rows.revisions.revisions.map(({ seq }) => seq),
+        [2, 1],
+      );
       assert.equal(task.text, rows.text);
+      assert.deepEqual(after.revisions, rows.revisions);
       assert.deepEqual(
         Option.getOrThrow(after.threads).map((thread) => ({
           status: thread.status,

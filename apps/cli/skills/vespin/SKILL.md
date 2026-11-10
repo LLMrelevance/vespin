@@ -1,6 +1,6 @@
 ---
 name: vespin
-description: Drive Vespin from a shell with the `vespin` command: create tasks, read and write their descriptions, start coding agents and wait on them, check out an agent's branch, share a cloud agent's port by preview link, answer the inbox threads agents post, read and keep the workspace's shared memory, and make and run automations. Load it when asked to work with Vespin tasks, their descriptions, agents, inbox, memory, or automations from a terminal, to script or pipe Vespin, or to wait on an agent and bring its branch local. Prefer Vespin's MCP server only when you have no shell.
+description: Drive Vespin from a shell with the `vespin` command: create tasks, read, write, and restore their descriptions, start coding agents and wait on them, check out an agent's branch, share a cloud agent's port by preview link, answer the inbox threads agents post, read and keep the workspace's shared memory, and make and run automations. Load it when asked to work with Vespin tasks, their descriptions, agents, inbox, memory, or automations from a terminal, to script or pipe Vespin, or to wait on an agent and bring its branch local. Prefer Vespin's MCP server only when you have no shell.
 ---
 
 # vespin
@@ -40,6 +40,7 @@ Other commands:
 | `section list` · `section create <title> [--emoji e]` · `section delete <section>` | Your sidebar sections in the workspace, with the tasks in each; make one; delete one (its tasks go back under Tasks). A section is named by id or title |
 | `task cat <task> <path> [--commit sha]` · `task ls <task> [path] [-r]` | Read a file or list a folder of the task's repository as GitHub holds it, at the default branch's head or a commit (`cat`), never an agent's unpushed work in its sandbox |
 | `description show <task>` · `description edit <task> -F <file\|->` | Print the description as Markdown; replace it whole |
+| `description history <task> [--before <r>]` · `description show <task> --revision <r>` · `description restore <task> <r>` | List the description's revisions, newest first, 50 a page (`--before` the revision it printed for older ones); print it as it stood after one; put one back, kept as a new revision, so restoring the one before undoes it |
 | `agent start <task> [-F prompt] [--model m --effort e] [--branch b] [--cloud\|--on <device>] [--follow\|--wait]` | Start an agent; `vespin models` lists `--model` and `--effort` values |
 | `agent continue <id> [-F note] [--at <message-id>] [--model m --effort e] [--cloud\|--on <device>] [--follow\|--wait]` | Continue an agent as the app's Continue does: it is stopped, and a new agent on its task is handed its brief and transcript, then the note. The new agent runs as you, on your own Claude or ChatGPT plan, so a teammate's agent is handed over to you. `--at` forks at one of its assistant messages instead (ids from `agent logs --json`), and it goes on. It runs on the agent's model and where it runs unless you name them |
 | `agent list [<task>] [--offset n]` · `agent view <id>` | Agents, newest first, the workspace's 50 a page (`--offset` the `nextOffset` it printed); one agent's status |
