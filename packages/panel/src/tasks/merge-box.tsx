@@ -7,6 +7,7 @@ import {
   REVIEW_DECISION,
 } from "@repo/features/agent-wire";
 import {
+  bypassSentence,
   isLivePullRequest,
   isMergeWrite,
   MERGE_ACTION,
@@ -35,8 +36,10 @@ import {
   ConfirmDialog,
   type DialogQuestion,
   SPINNER_SIZE,
+  SPLIT_BUTTON_WIDTH,
   SpinnerRing,
   SplitButton,
+  type SplitButtonWidth,
   STATUS_TONE,
   StaticChip,
   type StatusTone,
@@ -85,7 +88,12 @@ import type { PullRequestWrites } from "./pull-request-writes.js";
  *   the method chosen, its chevron choosing it too;
  * - with auto-merge on, Disable auto-merge;
  * - in the merge queue, Remove from queue, asked first, since leaving the
- *   queue may hold up the pull requests behind it.
+ *   queue may hold up the pull requests behind it;
+ * - blocked by a rule or behind its base, with nothing else to offer, for a
+ *   member GitHub lets merge past the base's rules as it lets an admin,
+ *   Bypass rules and merge… by the method chosen, its chevron choosing it
+ *   too, which asks first, naming what it bypasses, and merges as
+ *   `gh pr merge --admin` does.
  *
  * The method is kept per repository across launches, in this window's own
  * storage as the sidebar's folds are (`folded-groups.ts`); the first the
@@ -238,6 +246,7 @@ function MethodPress({
   busyLabel,
   onChoose,
   onPress,
+  width,
 }: {
   variant: ButtonVariant;
   words: string;
@@ -249,6 +258,8 @@ function MethodPress({
   busyLabel: string | undefined;
   onChoose: (method: MergeMethod) => void;
   onPress: () => void;
+  /** How wide the split button stands. */
+  width: SplitButtonWidth;
 }): React.JSX.Element {
   const menu = useMenu(methods.length > 1);
   const icon = variant === BUTTON_VARIANT.PRIMARY ? <GitMergeIcon aria-hidden="true" /> : undefined;
@@ -271,6 +282,7 @@ function MethodPress({
         variant={variant}
         icon={icon}
         disabled={busy && busyLabel === undefined}
+        width={width}
         onClick={onPress}
         {...busyProps(busyLabel)}
         menu={{ label: MERGE_WORDS.CHOOSE_METHOD, ...menu.trigger() }}
@@ -286,6 +298,95 @@ function MethodPress({
           onClose={menu.close}
         />
       )}
+    </>
+  );
+}
+
+/** The question Bypass rules and merge asks first: what it bypasses, and how and where it merges. */
+function bypassQuestion(
+  pullRequest: AgentOverviewPullRequest,
+  method: MergeMethod,
+): DialogQuestion {
+  return {
+    title: MERGE_WORDS.BYPASS_QUESTION,
+    body: bypassSentence(pullRequest, method),
+    verb: MERGE_WORDS.BYPASS,
+    running: MERGE_BUSY_WORDS[PULL_REQUEST_ACTION.MERGE],
+    loss: CONFIRM_LOSS.IRREVERSIBLE,
+    replayUnmasked: true,
+    // Note that the body names the base branch, which is the repository's, not the app's.
+    bodyReplayMasked: true,
+  };
+}
+
+/** What a bypass's question was asked about: the head it merges, and the base it names and merges into. */
+interface BypassAsked {
+  readonly head: string;
+  readonly base: string;
+}
+
+/**
+ * The press a member who may bypass the base's rules is offered where they
+ * hold the merge up: Bypass rules and merge… by the method chosen, outlined
+ * in red, its chevron choosing the method as a merge's does. It asks first,
+ * then merges at the head it asked about, so GitHub refuses a head pushed
+ * since. The question goes once a read finds another head or another
+ * base, so it never merges a head, or into a base, the member was not asked
+ * about, and goes with its panel; one already answered finishes.
+ */
+function BypassPress({
+  pullRequest,
+  methods,
+  method,
+  busy,
+  busyLabel,
+  shown,
+  writes,
+  width,
+  onChoose,
+}: {
+  pullRequest: AgentOverviewPullRequest;
+  methods: readonly MergeMethod[];
+  method: MergeMethod;
+  busy: boolean;
+  busyLabel: string | undefined;
+  shown: boolean;
+  writes: PullRequestWrites;
+  width: SplitButtonWidth;
+  onChoose: (method: MergeMethod) => void;
+}): React.JSX.Element {
+  const headSha = pullRequest.merging?.headSha ?? "";
+  const { base } = pullRequest;
+  // What the question was asked about; none while it asks nothing.
+  const [asked, setAsked] = useState<BypassAsked | undefined>(undefined);
+  const standing = asked !== undefined && asked.head === headSha && asked.base === base;
+  const confirm = useConfirmDialog(
+    { subject: standing, surfaceOpen: shown },
+    writes.confirmAct({
+      action: PULL_REQUEST_ACTION.MERGE,
+      method,
+      headSha: asked?.head ?? headSha,
+    }),
+    confirmFailure(FAILURE_SURFACE.PULL_REQUEST_WRITE),
+  );
+  if ((!shown || !standing) && asked !== undefined && !confirm.busy) setAsked(undefined);
+  return (
+    <>
+      <MethodPress
+        variant={BUTTON_VARIANT.DANGER_OUTLINE}
+        words={`${MERGE_WORDS.BYPASS}…`}
+        methods={methods}
+        method={method}
+        busy={busy}
+        busyLabel={busyLabel}
+        onChoose={onChoose}
+        width={width}
+        onPress={() => {
+          setAsked({ head: headSha, base });
+          confirm.ask();
+        }}
+      />
+      <ConfirmDialog open confirm={confirm} question={bypassQuestion(pullRequest, method)} />
     </>
   );
 }
@@ -329,6 +430,7 @@ export function MergeControl({
   repository,
   shown,
   writes,
+  width = SPLIT_BUTTON_WIDTH.HUG,
 }: {
   pullRequest: AgentOverviewPullRequest;
   /** The agent's repository, which the method chosen is kept by. */
@@ -336,6 +438,8 @@ export function MergeControl({
   /** Whether the panel the control stands in is on screen; a question asked goes with it. */
   shown: boolean;
   writes: PullRequestWrites;
+  /** How wide a press by the method chosen stands: its words' own width, or the row's, a phone's row of the control alone. */
+  width?: SplitButtonWidth | undefined;
 }): React.JSX.Element | null {
   const { merging } = pullRequest;
   const methods = merging?.methods ?? [];
@@ -384,6 +488,7 @@ export function MergeControl({
             busy={busy}
             busyLabel={busyAs(PULL_REQUEST_ACTION.MERGE)}
             onChoose={choose}
+            width={width}
             onPress={() =>
               void writes.write({ action: PULL_REQUEST_ACTION.MERGE, method, headSha })
             }
@@ -400,6 +505,7 @@ export function MergeControl({
             busy={busy}
             busyLabel={busyAs(PULL_REQUEST_ACTION.ENABLE_AUTO_MERGE)}
             onChoose={choose}
+            width={width}
             onPress={() =>
               void writes.write({ action: PULL_REQUEST_ACTION.ENABLE_AUTO_MERGE, method, headSha })
             }
@@ -423,6 +529,21 @@ export function MergeControl({
         return plain(BUTTON_VARIANT.OUTLINE, MERGE_WORDS.DEQUEUE, PULL_REQUEST_ACTION.DEQUEUE, () =>
           askDequeue(),
         );
+      case MERGE_ACTION.BYPASS:
+        if (method === undefined) return null;
+        return (
+          <BypassPress
+            pullRequest={pullRequest}
+            methods={methods}
+            method={method}
+            busy={busy}
+            busyLabel={busyAs(PULL_REQUEST_ACTION.MERGE)}
+            shown={shown}
+            writes={writes}
+            width={width}
+            onChoose={choose}
+          />
+        );
       default:
         return null;
     }
@@ -430,7 +551,13 @@ export function MergeControl({
   const drawn = press();
   if (drawn === null && !asked) return null;
   return (
-    <span className="merge-control flex min-h-control min-w-0 items-center gap-control-gap">
+    <span
+      className={
+        width === SPLIT_BUTTON_WIDTH.FULL
+          ? "merge-control flex min-h-control w-full min-w-0 items-center justify-end gap-control-gap"
+          : "merge-control flex min-h-control min-w-0 items-center gap-control-gap"
+      }
+    >
       {drawn}
       <ConfirmDialog open confirm={confirm} question={DEQUEUE_QUESTION} />
     </span>

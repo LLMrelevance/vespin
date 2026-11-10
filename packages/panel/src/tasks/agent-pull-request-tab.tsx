@@ -99,6 +99,7 @@ import {
   Skeleton,
   SkeletonRegion,
   SPINNER_SIZE,
+  SPLIT_BUTTON_WIDTH,
   SpinnerRegion,
   SpinnerRing,
   STATUS_TONE,
@@ -3603,7 +3604,7 @@ function PullRequestTabBody({
                       {phone ? null : (
                         <PreviewControl checks={landed(parts.checks)} shown={shown} />
                       )}
-                      {overview === undefined ? null : (
+                      {phone || overview === undefined ? null : (
                         <MergeControl
                           pullRequest={overview}
                           repository={repository}
@@ -3613,6 +3614,17 @@ function PullRequestTabBody({
                       )}
                     </div>
                   </div>
+                  {phone && overview !== undefined ? (
+                    <div className="pull-request-merge-row">
+                      <MergeControl
+                        pullRequest={overview}
+                        repository={repository}
+                        shown={shown}
+                        writes={writes}
+                        width={SPLIT_BUTTON_WIDTH.FULL}
+                      />
+                    </div>
+                  ) : null}
                   <PullRequestHead
                     parts={parts}
                     standing={standing}

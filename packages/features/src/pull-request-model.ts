@@ -43,8 +43,12 @@ import {
  * ready, which turns auto-merge on with no method, so GitHub queues it once
  * it is ready, as `gh pr merge --auto` does; with checks still running and
  * auto-merge allowed, Enable auto-merge; with auto-merge on, Disable
- * auto-merge; and in the merge queue, Remove from queue, which asks first,
- * since leaving the queue may hold up the pull requests behind it.
+ * auto-merge; in the merge queue, Remove from queue, which asks first,
+ * since leaving the queue may hold up the pull requests behind it; and,
+ * blocked by a rule or behind its base with nothing else to offer, for a
+ * member GitHub lets merge past the base's rules as it lets an admin
+ * (`canBypassRules`, read on their own sign-in), Bypass rules and merge…,
+ * which asks first, naming what it bypasses (`bypassSentence`).
  */
 
 /** Where a pull request stands, in the word its pill and its row say. */
@@ -85,6 +89,7 @@ export const MERGE_ACTION = {
   ENABLE_AUTO_MERGE: "enable-auto-merge",
   DISABLE_AUTO_MERGE: "disable-auto-merge",
   DEQUEUE: "dequeue",
+  BYPASS: "bypass",
 } as const;
 
 export type MergeAction = (typeof MERGE_ACTION)[keyof typeof MERGE_ACTION];
@@ -118,6 +123,9 @@ export const MERGE_WORDS = {
   DEQUEUE: "Remove from queue",
   /** What Remove from queue asks first. */
   DEQUEUE_QUESTION: "Remove from the merge queue?",
+  BYPASS: "Bypass rules and merge",
+  /** What Bypass rules and merge asks first. */
+  BYPASS_QUESTION: "Merge without waiting for requirements?",
   CHOOSE_METHOD: "Choose how to merge",
   autoMerge: (method: MergeMethod | null) =>
     method === null ? "Auto-merge is on" : `Auto-merge is on (${METHOD_NOUNS[method]})`,
@@ -141,8 +149,20 @@ export function isMergeWrite(action: PullRequestAction | undefined): action is M
 /** The states GitHub would merge in now: ready, or with checks nothing requires short of passing. */
 const MERGEABLE: ReadonlySet<MergeState> = new Set([MERGE_STATE.CLEAN, MERGE_STATE.UNSTABLE]);
 
-/** The one thing the control offers from where the pull request stands, or nothing. */
-function mergeActionOf(merge: MergeState, merging: PullRequestMerging): MergeAction | undefined {
+/** The states a member GitHub lets bypass the base's rules may merge in past them: held by a required review or check, or behind a base that must be merged in first. */
+const BYPASSABLE: ReadonlySet<MergeState> = new Set([MERGE_STATE.BLOCKED, MERGE_STATE.BEHIND]);
+
+/**
+ * The one thing the control offers from where the pull request stands, or
+ * nothing. Note that the bypass is offered only where nothing else would be,
+ * so a member who may bypass still turns auto-merge on while checks run, and
+ * a base merged through a queue still queues.
+ */
+function mergeActionOf(
+  merge: MergeState,
+  merging: PullRequestMerging,
+  canBypassRules: boolean,
+): MergeAction | undefined {
   if (merging.queued !== null) return MERGE_ACTION.DEQUEUE;
   if (merging.autoMerge !== null) return MERGE_ACTION.DISABLE_AUTO_MERGE;
   if (merge === MERGE_STATE.CONFLICTS || merge === MERGE_STATE.DRAFT) return undefined;
@@ -150,14 +170,15 @@ function mergeActionOf(merge: MergeState, merging: PullRequestMerging): MergeAct
   if (merging.methods.length === 0) return undefined;
   if (MERGEABLE.has(merge)) return MERGE_ACTION.MERGE;
   const waiting = merging.checks === CHECK_SUMMARY.PENDING;
-  return merging.autoMergeAllowed && waiting ? MERGE_ACTION.ENABLE_AUTO_MERGE : undefined;
+  if (merging.autoMergeAllowed && waiting) return MERGE_ACTION.ENABLE_AUTO_MERGE;
+  return canBypassRules && BYPASSABLE.has(merge) ? MERGE_ACTION.BYPASS : undefined;
 }
 
 /** The press a pull request offers as it stands: none for one not open, or whose merge read has not landed. */
 export function mergeActionFor(pullRequest: AgentOverviewPullRequest): MergeAction | undefined {
   const { merging } = pullRequest;
   if (merging === undefined || pullRequest.state !== PULL_REQUEST_STATE.OPEN) return undefined;
-  return mergeActionOf(pullRequest.merge, merging);
+  return mergeActionOf(pullRequest.merge, merging, pullRequest.canBypassRules === true);
 }
 
 /** Whether a pull request may still merge: open, or a draft. */
@@ -231,6 +252,12 @@ export function mergeSentence(
         ? MERGE_WORDS.autoMerge(autoMerge.method)
         : undefined;
   return lead === undefined ? standing : `${lead}. ${standing}`;
+}
+
+/** What Bypass rules and merge asks first: what it bypasses, in GitHub's sentence for the merge, and how and where it merges. */
+export function bypassSentence(pullRequest: AgentOverviewPullRequest, method: MergeMethod): string {
+  const { base } = pullRequest;
+  return `${mergeSentence(pullRequest, MERGE_ACTION.BYPASS)}. This merges it into ${base} now by ${METHOD_NOUNS[method]}, as you on GitHub, bypassing the rules ${base} requires.`;
 }
 
 /* ----- The checks ----- */

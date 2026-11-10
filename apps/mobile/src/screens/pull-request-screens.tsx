@@ -153,6 +153,8 @@ function mergePressOf(
       };
     case MERGE_ACTION.DEQUEUE:
       return { words: MERGE_WORDS.DEQUEUE, prominent: false, request: undefined };
+    // Note that the bar offers no bypass of the base's rules, which asks first; GitHub's own does.
+    case MERGE_ACTION.BYPASS:
     case undefined:
       return undefined;
   }
