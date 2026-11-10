@@ -111,6 +111,7 @@ export default function SettingsScreen() {
               <AccountRow
                 name={account.name ?? account.email}
                 email={account.email}
+                picture={account.pictureUrl}
                 detail={`Signed in with ${SOCIAL_PROVIDER_LABEL[account.provider]}`}
               />
             </ListSection>
