@@ -15,6 +15,7 @@ import { AGENT_TOOL } from "./agent-tools.js";
 /** The tools by name, each the name a model calls it by. */
 export const MEMBER_MCP_TOOL = {
   LIST_WORKSPACES: "list_workspaces",
+  CREATE_WORKSPACE: "create_workspace",
   LIST_WORKSPACE_MEMBERS: "list_workspace_members",
   SET_WORKSPACE_SLUG: "set_workspace_slug",
   SET_WORKSPACE_PHOTO: "set_workspace_photo",

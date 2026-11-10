@@ -167,6 +167,7 @@ import {
   WORKSPACE_BOUNDS,
   WORKSPACE_PHOTO_BOUNDS,
   WORKSPACE_PHOTO_TYPE,
+  workspaceCreateRequestSchema,
   workspaceOfSlug,
   workspacePhotoSetRequestSchema,
 } from "@repo/features/workspace-wire";
@@ -182,6 +183,7 @@ import { Effect, Option, Redacted, Result, Schema } from "effect";
 import type { HttpClient } from "effect/http";
 import { writeOwnPreferences } from "../accounts/account-preferences.js";
 import { accountProcedureSeams } from "../accounts/account-seams.js";
+import { createdWorkspace, WorkspacePlugin } from "../accounts/workspace-create.js";
 import { forgetWorkspaceMemory, WORKSPACE_MEMORY } from "../accounts/workspace-memories.js";
 import {
   workspaceMembersRead,
@@ -419,9 +421,10 @@ import {
   runReadPullRequest,
 } from "./pull-request-tools.js";
 
-/** What a tool's effect runs against: the store, GitHub through the App, the model catalog, the deployment's environment a start's summary model reads, our Sentry integration an automation's trigger is checked against and a workspace's installations are read through, Vercel Connect the member's own integrations are read, begun, and ended through, the pull request links a link's read is kept in, an agent's sandbox its ports are read and shared in and the browser in it a tab is opened in, the deployment's page links its shares answer, and the member the call acts for. */
+/** What a tool's effect runs against: the store, GitHub through the App, the model catalog, the deployment's environment a start's summary model reads, our Sentry integration an automation's trigger is checked against and a workspace's installations are read through, Vercel Connect the member's own integrations are read, begun, and ended through, the pull request links a link's read is kept in, an agent's sandbox its ports are read and shared in and the browser in it a tab is opened in, the deployment's page links its shares answer, the organization plugin a workspace is created through, and the member the call acts for. */
 export type MemberMcpServices =
   | Sandbox
+  | WorkspacePlugin
   | AgentSandbox
   | AgentBrowser
   | PageLinks
@@ -5197,6 +5200,62 @@ const DELETE_ENVIRONMENT_VARIABLE_TOOL = memberMcpTool({
     ),
 });
 
+/*
+ * A workspace created. The member's new workspace is made through the one
+ * operation the hosted create runs (`../accounts/workspace-create.ts`), the
+ * member its owner, as Create workspace in the window makes it.
+ */
+
+/** Why a create made nothing, in words for one acting for the member. */
+const CREATE_WORKSPACE_REFUSAL = {
+  UNMADE:
+    "Not confirmed: the workspace could not be made, or was made and could not be read back; " +
+    `check ${MEMBER_MCP_TOOL.LIST_WORKSPACES} before trying again.`,
+} as const;
+
+/** A create names the workspace, held as the window holds a name. */
+const CreateWorkspaceInputSchema = Schema.Struct({
+  name: describeWire(
+    workspaceCreateRequestSchema.fields.name,
+    `The new workspace's name, at most ${WORKSPACE_BOUNDS.MAX_NAME_CHARS} characters, its ends trimmed.`,
+  ),
+});
+
+const CREATE_WORKSPACE_TOOL = memberMcpTool({
+  name: MEMBER_MCP_TOOL.CREATE_WORKSPACE,
+  description:
+    "Create a new workspace, with the member you act for as its owner, as Create workspace in " +
+    "the app makes one. Its slug, the first step of its links, is spelled from its name. Create " +
+    "one only when the member asks for a new workspace. Answers `accepted` with the workspace's " +
+    "id, slug, name, and the member's role in it, which every other tool names it by; or " +
+    "`rejected` and why.",
+  input: CreateWorkspaceInputSchema,
+  annotations: ADDITIVE,
+  run: ({ name }) =>
+    Effect.gen(function* () {
+      const member = yield* AdmittedMember;
+      const seams = yield* WorkspacePlugin;
+      return yield* createdWorkspace(seams, member.userId, name).pipe(
+        Effect.map((workspace) => ({
+          status: ACTION_RESULT_STATUS.ACCEPTED,
+          workspace: {
+            id: workspace.id,
+            slug: workspace.slug,
+            name: workspace.name,
+            role: workspace.role,
+          },
+        })),
+        // Note that the refusal is logged by its slug alone, because the plugin's own words may quote the name.
+        Effect.catch((refusal) =>
+          Effect.as(
+            Effect.logWarning(`Workspace not created: ${refusal.error}`),
+            agentToolRejected(CREATE_WORKSPACE_REFUSAL.UNMADE),
+          ),
+        ),
+      );
+    }),
+});
+
 /** Every tool the server offers, listed in the order an agent reads them. */
 /**
  * The workspace experiments on in one of the member's workspaces at least,
@@ -5317,4 +5376,5 @@ export const MEMBER_MCP_TOOLS: readonly MemberMcpTool[] = [
   LIST_ENVIRONMENT_VARIABLES_TOOL,
   SET_ENVIRONMENT_VARIABLE_TOOL,
   DELETE_ENVIRONMENT_VARIABLE_TOOL,
+  CREATE_WORKSPACE_TOOL,
 ];

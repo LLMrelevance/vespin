@@ -76,6 +76,7 @@ const {
 /** Each tool's procedures: at least one, so no row stands empty. */
 export const MEMBER_MCP_COVERAGE = {
   [MEMBER_MCP_TOOL.LIST_WORKSPACES]: { workspaces: ["list"] },
+  [MEMBER_MCP_TOOL.CREATE_WORKSPACE]: { workspaces: ["create"] },
   [MEMBER_MCP_TOOL.LIST_WORKSPACE_MEMBERS]: { workspaces: ["members"] },
   [MEMBER_MCP_TOOL.SET_WORKSPACE_SLUG]: { workspaces: ["setSlug"] },
   [MEMBER_MCP_TOOL.SET_WORKSPACE_PHOTO]: { workspaces: ["setPhoto"] },
@@ -375,7 +376,6 @@ export const MEMBER_MCP_EXCLUSIONS = {
   workspaceSentry: { install: NEEDS_BROWSER },
   workspaceSlackBot: { connect: NEEDS_BROWSER },
   workspaces: {
-    create: NOT_YET_BUILT,
     rename: NOT_YET_BUILT,
     setExperiment: INTERNAL,
     removeMember: NOT_YET_BUILT,
