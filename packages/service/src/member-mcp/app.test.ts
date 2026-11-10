@@ -52,7 +52,7 @@ import { INSTALLED_SKILL_SCOPE } from "@repo/features/installed-skill-wire";
 import { INTEGRATION_PROVIDER } from "@repo/features/integration-wire";
 import { PULL_REQUEST_ACTION } from "@repo/features/pull-request-write-wire";
 import { TASK_SECTION_WRITE } from "@repo/features/task-section-wire";
-import { DESCRIPTION_ACTOR, TASK_STATUS } from "@repo/features/task-wire";
+import { DESCRIPTION_ACTOR, TASK_RELATION_KIND, TASK_STATUS } from "@repo/features/task-wire";
 import { WORKSPACE_ROLE } from "@repo/features/workspace-wire";
 import { EXPERIMENT, WORKSPACE_EXPERIMENT_LIST } from "@repo/settings";
 import { settleJsonSchemaGolden } from "@repo/wire/testing";
@@ -193,7 +193,10 @@ const decodeListed = Schema.decodeUnknownSync(
 );
 
 const decodeMade = Schema.decodeUnknownSync(
-  Schema.Struct({ task: Schema.Struct({ id: Schema.String }) }),
+  Schema.Struct({ task: Schema.Struct({ id: Schema.String, key: Schema.String }) }),
+);
+const decodeRelated = Schema.decodeUnknownSync(
+  Schema.Struct({ task: Schema.Struct({ blockedBy: Schema.Array(Schema.Unknown) }) }),
 );
 const decodeAutomation = Schema.decodeUnknownSync(
   Schema.Struct({ automation: Schema.Struct({ id: Schema.String }) }),
@@ -863,6 +866,19 @@ it.effect(
         notes: [{ kind: NOTE_KIND.ADD, section: "Problem", text: "Invoices lag too." }],
       });
       yield* call(MEMBER_MCP_TOOL.UPDATE_TASK, { taskId, status: TASK_STATUS.IN_PROGRESS });
+      // A task found by its key is the one made; a blocker of it moved to its sub-task in one call.
+      const found = decodeMade(yield* call(MEMBER_MCP_TOOL.FIND_TASK, { task: made.task.key }));
+      const blockerId = decodeMade(
+        yield* call(MEMBER_MCP_TOOL.CREATE_TASK, { name: "Invoice lag" }),
+      ).task.id;
+      yield* call(MEMBER_MCP_TOOL.UPDATE_TASK, { taskId, blockedBy: { add: [blockerId] } });
+      yield* call(MEMBER_MCP_TOOL.CHANGE_TASK_RELATION, {
+        taskId,
+        otherTaskId: blockerId,
+        from: TASK_RELATION_KIND.BLOCKED_BY,
+        to: TASK_RELATION_KIND.SUB_TASK,
+      });
+      const related = decodeRelated(yield* call(MEMBER_MCP_TOOL.READ_TASK, { taskId }));
       yield* call(MEMBER_MCP_TOOL.UPDATE_AGENT, { agentId, archived: true, reason: "Done." });
       const automationId = decodeAutomation(
         yield* call(MEMBER_MCP_TOOL.CREATE_AUTOMATION, {
@@ -884,6 +900,7 @@ it.effect(
       const after = yield* Effect.gen(function* () {
         return {
           task: Option.getOrThrow(yield* readTask(member.userId, taskId)),
+          blocker: Option.getOrThrow(yield* readTask(member.userId, blockerId)),
           revisions: yield* listRevisions(member.userId, taskId),
           agent: Option.getOrThrow(yield* readAgent(member.userId, agentId)),
           automation: yield* readAutomation(member.userId, automationId),
@@ -892,6 +909,9 @@ it.effect(
 
       assert.equal(after.task.ownerId, member.userId);
       assert.equal(after.task.task.status, TASK_STATUS.IN_PROGRESS);
+      assert.equal(found.task.id, taskId);
+      assert.deepEqual(related.task.blockedBy, []);
+      assert.equal(after.blocker.task.parentTaskId, taskId);
       assert.equal(after.task.text, "## Problem\n\nSeats drift.\n\nInvoices lag too.");
       // The description's first text and the note are the member's own, as their window writes it, and no agent's.
       assert.deepEqual(

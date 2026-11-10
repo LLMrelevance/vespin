@@ -1,5 +1,5 @@
 /**
- * task.ts -- `vespin task list`, `view`, `create`, `update`, `delete`, `cat`, and `ls`: the workspace's tasks, one task with its agents, pull requests, and open asks, a new task, a task changed, a task deleted, and its repository's files read.
+ * task.ts -- `vespin task list`, `view`, `create`, `update`, `relate`, `delete`, `cat`, and `ls`: the workspace's tasks, one task with its agents, pull requests, and open asks, a new task, a task changed, a relation between two tasks moved, a task deleted, and its repository's files read.
  *
  * Each reads the workspace a command acts in (`../workspace.js`) and names a
  * task by its id, its number, or its key (`../tasks.js`). `create` takes its
@@ -23,11 +23,13 @@ import {
   TASK_BLOCK_RELATION,
   TASK_FILE_REFUSAL,
   TASK_PRIORITY_ORDER,
+  TASK_RELATION_KIND,
   TASK_STATUS_ORDER,
   TASK_TREE_ENTRY,
   type Task,
   type TaskFileRefusal,
   type TaskPullRequestLine,
+  type TaskRelationKind,
   type TaskSummary,
 } from "@repo/features/task-wire";
 import { taskKey } from "@repo/features/workspace-key";
@@ -538,6 +540,98 @@ const deleteCommand = Command.make(
   ]),
 );
 
+/** The kind each kind is the other side of, which a relation can never stand in beside it, so a move from it turns the relation around. */
+const INVERSE_RELATION_KIND = {
+  [TASK_RELATION_KIND.BLOCKED_BY]: TASK_RELATION_KIND.BLOCKS,
+  [TASK_RELATION_KIND.BLOCKS]: TASK_RELATION_KIND.BLOCKED_BY,
+  [TASK_RELATION_KIND.SUB_TASK]: TASK_RELATION_KIND.PARENT,
+  [TASK_RELATION_KIND.PARENT]: TASK_RELATION_KIND.SUB_TASK,
+} as const satisfies Record<TaskRelationKind, TaskRelationKind>;
+
+/** How a relation reads with the task first and the other task after it. */
+const RELATION_WORDS = {
+  [TASK_RELATION_KIND.BLOCKED_BY]: "blocked by",
+  [TASK_RELATION_KIND.BLOCKS]: "blocks",
+  [TASK_RELATION_KIND.SUB_TASK]: "parent of",
+  [TASK_RELATION_KIND.PARENT]: "sub-task of",
+} as const satisfies Record<TaskRelationKind, string>;
+
+/** A flag naming the other task in one kind of relation. */
+const relatedFlag = (kind: TaskRelationKind, words: string) =>
+  Flag.String(kind).pipe(Flag.optional, Flag.withDescription(words));
+
+const relateCommand = Command.make(
+  "relate",
+  {
+    task: Argument.String("task").pipe(
+      Argument.withDescription("The task, by its id, its number, or its key such as ACME-42"),
+    ),
+    blockedBy: relatedFlag(TASK_RELATION_KIND.BLOCKED_BY, "The other task, made to block it"),
+    blocks: relatedFlag(TASK_RELATION_KIND.BLOCKS, "The other task, made to wait on it"),
+    subTask: relatedFlag(TASK_RELATION_KIND.SUB_TASK, "The other task, made its sub-task"),
+    parent: relatedFlag(TASK_RELATION_KIND.PARENT, "The other task, made its parent"),
+    from: Flag.Literals("from", Object.values(TASK_RELATION_KIND)).pipe(
+      Flag.optional,
+      Flag.withDescription(
+        "How the other task stands to it now; the other side of the new kind where left out",
+      ),
+    ),
+  },
+  ({ task, blockedBy, blocks, subTask, parent, from }) =>
+    Effect.gen(function* () {
+      const named = [
+        { to: TASK_RELATION_KIND.BLOCKED_BY, other: blockedBy },
+        { to: TASK_RELATION_KIND.BLOCKS, other: blocks },
+        { to: TASK_RELATION_KIND.SUB_TASK, other: subTask },
+        { to: TASK_RELATION_KIND.PARENT, other: parent },
+      ].flatMap(({ to, other }) => (Option.isSome(other) ? [{ to, other: other.value }] : []));
+      const [asked, ...others] = named;
+      if (asked === undefined || others.length > 0) {
+        return yield* new CommandFailed({
+          exit: CLI_EXIT.USAGE,
+          message: "Name one relation: --blocked-by, --blocks, --sub-task, or --parent.",
+        });
+      }
+      const fromKind = Option.getOrElse(from, () => INVERSE_RELATION_KIND[asked.to]);
+      if (fromKind === asked.to) {
+        return yield* new CommandFailed({
+          exit: CLI_EXIT.USAGE,
+          message: `--from names the kind it stands in now, so it is another than ${asked.to}.`,
+        });
+      }
+      const id = yield* resolveTaskId(task);
+      const otherId = yield* resolveTaskId(asked.other);
+      const { hosted } = yield* session;
+      const { plan } = yield* askService(hosted.plans.relation, {
+        params: { id },
+        body: { taskId: otherId, from: fromKind, to: asked.to },
+      });
+      const { workspaces } = yield* askService(hosted.workspaces.list, undefined);
+      const found = taskJson(plan, workspaceNamed(workspaces, plan.workspaceId));
+      yield* answer({
+        json: found,
+        lines: [
+          `Related ${taskLabel(found)} ${found.name}: ${RELATION_WORDS[asked.to]} ${asked.other}.`,
+        ],
+        ids: [found.id],
+      });
+    }),
+).pipe(
+  Command.withDescription(
+    "Move a relation between two tasks to another kind in one step, or add it where none stood",
+  ),
+  Command.withExamples([
+    {
+      command: "vespin task relate ACME-42 --sub-task ACME-43 --from blocked-by",
+      description: "Make the task blocking ACME-42 its sub-task instead",
+    },
+    {
+      command: "vespin task relate ACME-42 --blocked-by ACME-43",
+      description: "Turn a block around: ACME-43 blocks ACME-42, where ACME-42 blocked it",
+    },
+  ]),
+);
+
 /** The account id `--assignee` names among the task's workspace's members: none for nobody, or a usage failure where it names no one, or several. */
 function memberIdOf(taskId: string, named: string) {
   return Effect.gen(function* () {
@@ -689,7 +783,7 @@ const lsCommand = Command.make(
   ]),
 );
 
-/** The task group: list, view, create, update, delete, cat, and ls. */
+/** The task group: list, view, create, update, relate, delete, cat, and ls. */
 export const taskCommand = Command.make("task").pipe(
   Command.withDescription(
     "List, view, create, change, and delete tasks, and read their repository's files",
@@ -699,6 +793,7 @@ export const taskCommand = Command.make("task").pipe(
     viewCommand,
     createCommand,
     updateCommand,
+    relateCommand,
     deleteCommand,
     catCommand,
     lsCommand,

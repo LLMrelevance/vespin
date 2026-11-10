@@ -35,6 +35,7 @@ Other commands:
 | Command | What it does |
 | --- | --- |
 | `task list [--mine] [--status s]` · `task view <task>` · `task update <task> [--status] [--priority] [--assignee] [--name]` | Find, read, and change tasks; `--status done` marks one done |
+| `task relate <task> --blocked-by\|--blocks\|--sub-task\|--parent <other> [--from kind]` | Move a relation between two tasks to another kind in one step, such as a blocker made a sub-task; `--from` defaults to the other side, turning the relation around |
 | `task update <task> [--parent <task\|none>] [--blocked-by <task>] [--blocks <task>] [--remove-blocked-by <task>] [--remove-blocks <task>] [--section <section\|none>]` | Put a task under a parent or back at the top; add or take away the tasks it waits on and that wait on it (each flag again for each task); keep it in one of your sidebar sections |
 | `workspace members` · `workspace slug <slug>` | The workspace's members (account id, role, name, email) and who left it; change its slug, the first step of its links, which only its owner may (links under the old slug still open it) |
 | `section list` · `section create <title> [--emoji e]` · `section delete <section>` | Your sidebar sections in the workspace, with the tasks in each; make one; delete one (its tasks go back under Tasks). A section is named by id or title |
