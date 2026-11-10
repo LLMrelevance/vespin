@@ -252,8 +252,8 @@ export type InboxStatus = (typeof INBOX_STATUS)[keyof typeof INBOX_STATUS];
 /**
  * The statuses an item may move to from each it stands in: a post opens it
  * whatever it stands in; a member's answer or nod, a close, and a settle
- * take only an open one; an answer or a member's close taken back, and a
- * settle undone, open it again. Every write of an item's status guards on
+ * take only an open one; an answer or a member's close taken back opens
+ * it again, and nothing undoes a settle. Every write of an item's status guards on
  * the statuses this lists as moving to the one it writes (`statusesMovingTo`).
  */
 export const INBOX_STATUS_MOVES = {
