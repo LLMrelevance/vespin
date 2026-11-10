@@ -1,6 +1,6 @@
 ---
 name: vespin
-description: "Drive Vespin from a shell with the `vespin` command: create tasks, read, write, and restore their descriptions, comment on them, read the pages agents show, start coding agents and wait on them, check out an agent's branch, share a cloud agent's port by preview link, answer the inbox threads agents post, read and keep the workspace's shared memory, and make and run automations. Load it when asked to work with Vespin tasks, their descriptions, agents, inbox, memory, or automations from a terminal, to script or pipe Vespin, or to wait on an agent and bring its branch local. Prefer Vespin's MCP server only when you have no shell."
+description: "Drive Vespin from a shell with the `vespin` command: create tasks, read, write, and restore their descriptions, comment on them, read the pages agents show, start coding agents and wait on them, check out an agent's branch, share a cloud agent's port by preview link, answer, start, mark read, and set reminders on inbox threads, read and keep the workspace's shared memory, and make and run automations. Load it when asked to work with Vespin tasks, their descriptions, agents, inbox, memory, or automations from a terminal, to script or pipe Vespin, or to wait on an agent and bring its branch local. Prefer Vespin's MCP server only when you have no shell."
 ---
 
 # vespin
@@ -62,6 +62,9 @@ Other commands:
 | `agent tabs <id>` · `agent tabs open <id> <address>` · `agent tabs take <id> <tab>` · `agent tabs hand-back <id> <tab>` | A cloud agent's browser tabs, each by id, who drives it, title, and address (never the page itself); open a page in its browser, such as a sign-in for a person to finish; take a tab over so the agent leaves it alone (it lapses a minute after the last `take`, which renews it); hand it back. `open` takes the new tab over for you |
 | `inbox list [--unread]` · `inbox view <thread>` | Threads agents posted, and one thread with its open ask |
 | `inbox answer <thread> <option>` · `inbox answer <thread> -F <json\|->` · `inbox reply <thread> -F <msg\|->` · `inbox close <thread>` | Answer a decide's option, `done` for a to-do, or a form as JSON by field; write on the thread; close it |
+| `inbox read <thread>` · `inbox unread <thread>` · `inbox read-all` | Mark a thread read, or unread until you read it again; mark every thread of the workspace read. Yours alone; no agent hears of it |
+| `inbox remind <thread> <when>` (or `snooze`) · `inbox remind <thread> --clear` | Keep a thread out of your inbox until `tomorrow`, `fri 3pm`, or `nov 12 9:30am` (a day alone at 9 AM, in your zone); end the reminder |
+| `inbox start <agent> [-t <title>] -F <msg\|->` | Start a thread with an agent; it reaches the agent as your message, and it answers on the thread |
 | `preferences` · `preferences set --model m --effort e [--context-window standard\|long]` | Your default model, effort, and context window, which an agent start naming none runs on; change it (`vespin models` lists the choices). The default is yours, the same in every workspace |
 | `memory list` · `memory search [words…]` · `memory save <text…> [--replaces <id>]` · `memory forget <id>` | The workspace's shared memory: every memory, the few some words find, one kept as your words (or `-F <file\|->`; `--replaces` corrects one in place), one forgotten for good. Search and save are refused while the workspace has Memory off |
 | `automation list [--task <task>]` · `automation view <id>` | Automations you may read, and one with its prompt and newest runs |

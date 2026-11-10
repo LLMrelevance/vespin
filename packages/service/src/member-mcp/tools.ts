@@ -70,6 +70,7 @@ import {
   PULL_REQUEST_STATE,
 } from "@repo/features/agent-wire";
 import { automationCreateRequestSchema } from "@repo/features/automation-wire";
+import { dateTimeSchema } from "@repo/features/date-mention";
 import {
   DESCRIPTION_COMMENT_ACTION,
   DESCRIPTION_COMMENT_ACTOR,
@@ -89,6 +90,7 @@ import {
   INBOX_REPLY,
   INBOX_STATUS,
   inboxAnswersSchema,
+  inboxStartRequestSchema,
 } from "@repo/features/inbox-wire";
 import {
   integrationConnectionNameSchema,
@@ -301,7 +303,16 @@ import {
   saveRepositorySetup,
 } from "../workspace-sandbox-setup/workspace-sandbox-setup.js";
 import { AdmittedMember, type AdmittedMemberValues } from "./admission.js";
-import { answerAskAsMember, closeThreadAsMember, readMemberInbox, replyAsMember } from "./inbox.js";
+import {
+  answerAskAsMember,
+  closeThreadAsMember,
+  markInboxReadAsMember,
+  markThreadReadAsMember,
+  readMemberInbox,
+  remindThreadAsMember,
+  replyAsMember,
+  startThreadAsMember,
+} from "./inbox.js";
 import {
   connectIntegrationAsMember,
   disconnectIntegrationAsMember,
@@ -2191,6 +2202,101 @@ const CLOSE_THREAD_TOOL = memberMcpTool({
     Effect.flatMap(AdmittedMember, (member) => closeThreadAsMember(member.userId, asked)),
 });
 
+/** A thread marked read or unread names it and which. */
+const MarkThreadReadInputSchema = Schema.Struct({
+  threadId: THREAD_ID,
+  read: describeWire(
+    Schema.Boolean,
+    "true to mark it read, as opening it does; false to mark it unread, which holds until the " +
+      "member reads it again.",
+  ),
+});
+
+const MARK_THREAD_READ_TOOL = memberMcpTool({
+  name: MEMBER_MCP_TOOL.MARK_THREAD_READ,
+  description:
+    "Mark a thread in the member's inbox read or unread for them alone, as they would in the " +
+    "window: no other member's read moves, and no agent hears of it. Answers `accepted` with " +
+    "the thread's id and whether it is now unread, or `rejected` and why.",
+  input: MarkThreadReadInputSchema,
+  annotations: IDEMPOTENT_CHANGE,
+  run: (asked) =>
+    Effect.flatMap(AdmittedMember, (member) => markThreadReadAsMember(member.userId, asked)),
+});
+
+const MARK_INBOX_READ_TOOL = memberMcpTool({
+  name: MEMBER_MCP_TOOL.MARK_INBOX_READ,
+  description:
+    "Mark every thread of a workspace's inbox read for the member you act for, open or " +
+    "settled, as Mark all read does in the window: no other member's read moves, and no agent " +
+    "hears of it. Answers `accepted` with how many were unread, or `rejected` and why. " +
+    WORKSPACE_WORDS,
+  input: ReadInboxInputSchema,
+  annotations: IDEMPOTENT_CHANGE,
+  run: ({ workspace }) =>
+    Effect.gen(function* () {
+      const member = yield* AdmittedMember;
+      const listed = yield* listedWorkspace(member.userId, workspace);
+      if (Result.isFailure(listed)) return agentToolRejected(listed.failure);
+      return yield* markInboxReadAsMember(member.userId, listed.success);
+    }),
+});
+
+/** A reminder names its thread and when it comes due, or none to end it. */
+const RemindThreadInputSchema = Schema.Struct({
+  threadId: THREAD_ID,
+  at: describeWire(
+    Schema.NullOr(dateTimeSchema),
+    "When the thread comes back, as a time with its offset, such as 2026-10-20T09:00-07:00, " +
+      "in the member's own zone where you know it; null to end a reminder set before.",
+  ),
+});
+
+const REMIND_THREAD_TOOL = memberMcpTool({
+  name: MEMBER_MCP_TOOL.REMIND_THREAD,
+  description:
+    "Set a reminder on a thread in the member's inbox for them alone, as Remind me does in the " +
+    "window: it stays out of their inbox until the time named, and comes back then, read or " +
+    "unread as it stands. A reminder set again replaces the one before, and null ends it. No " +
+    "agent hears of it. Answers `accepted` with the thread's id, when it comes back, and " +
+    "whether it is unread, or `rejected` and why.",
+  input: RemindThreadInputSchema,
+  annotations: IDEMPOTENT_CHANGE,
+  run: ({ threadId, at }) =>
+    Effect.flatMap(AdmittedMember, (member) =>
+      remindThreadAsMember(member.userId, {
+        threadId,
+        at: at === null ? null : Date.parse(at),
+      }),
+    ),
+});
+
+/** A new thread names its agent, its first message, and at most its subject. */
+const StartThreadInputSchema = Schema.Struct({
+  agentId: AgentIdInputSchema.fields.agentId,
+  title: Schema.optionalKey(
+    describeWire(
+      inboxStartRequestSchema.fields.title.schema,
+      "The thread's subject; leave it out to have it titled from the message.",
+    ),
+  ),
+  text: ReplyToThreadInputSchema.fields.text,
+});
+
+const START_THREAD_TOOL = memberMcpTool({
+  name: MEMBER_MCP_TOOL.START_THREAD,
+  description:
+    "Start a thread in the member's inbox with a coding agent they may message, as the member, " +
+    "as a new mail is written: its subject and first message. " +
+    `${HANDED_WORDS} The agent answers on the thread, which ${MEMBER_MCP_TOOL.READ_INBOX} ` +
+    "reads. Answers `accepted` with the thread as it then stands, or `rejected` and why " +
+    "nothing was written.",
+  input: StartThreadInputSchema,
+  annotations: ADDITIVE,
+  run: (asked) =>
+    Effect.flatMap(AdmittedMember, (member) => startThreadAsMember(member.userId, asked)),
+});
+
 /**
  * The kept published answers of this function's instance, made on its first
  * change: the server is a function of its own, so a change lets go of what
@@ -3561,6 +3667,10 @@ export const MEMBER_MCP_TOOLS: readonly MemberMcpTool[] = [
   ANSWER_ASK_TOOL,
   REPLY_TO_THREAD_TOOL,
   CLOSE_THREAD_TOOL,
+  MARK_THREAD_READ_TOOL,
+  MARK_INBOX_READ_TOOL,
+  REMIND_THREAD_TOOL,
+  START_THREAD_TOOL,
   AGENT_PULL_REQUEST_ACTION_TOOL,
   READ_PULL_REQUEST_TOOL,
   MARK_PULL_REQUEST_FILES_VIEWED_TOOL,
