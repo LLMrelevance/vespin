@@ -131,7 +131,13 @@ import {
   Shortcut,
   useMinute,
 } from "@repo/ui";
-import { ACTOR_KIND, type Actor, actorName, assigneeFace } from "@repo/ui/actor-model";
+import {
+  ACTOR_KIND,
+  type Actor,
+  actorName,
+  assigneeFace,
+  type EditReader,
+} from "@repo/ui/actor-model";
 import {
   COMMAND_FILTER,
   CommandDialog,
@@ -187,6 +193,7 @@ import { unreadShown } from "../failure-report.js";
 import { type InboxView, useInboxView } from "../inbox-route.js";
 import { type CopyLink, inSidePanel, type LinkAtHand } from "../links-at-hand.js";
 import { workspaceMembersQuery, workspaceMembersRetryMutation } from "../live-reads.js";
+import { useWorkspaceDirectory } from "../member-directory.js";
 import { memberRows } from "../member-rows.js";
 import { PANEL_SPAN, useKeystrokeSpans } from "../panel-spans.js";
 import { PANEL_TAB, type PanelTab } from "../panel-tabs.js";
@@ -201,6 +208,7 @@ import {
   settingsSearchEntries,
 } from "../settings-search.js";
 import { SHORTCUT_SUBJECT, shortcutSubject } from "../shortcut-target.js";
+import { agentSummaryEnd } from "../tasks/agent-menu-row.js";
 import { agentName } from "../tasks/agent-model.js";
 import { AgentCard, agentSubject, NOTHING_HELD } from "../tasks/agent-ref.js";
 import { AUTOMATIONS_PAGE } from "../tasks/automations-place.js";
@@ -209,7 +217,7 @@ import { FileCard, fileLook } from "../tasks/file-ref.js";
 import { refusalLine } from "../tasks/file-tab-model.js";
 import { InboxItemCard, InboxItemEnd, inboxItemGlyph } from "../tasks/inbox-item-parts.js";
 import { refusedAnswer, taskTreeQueryOptions } from "../tasks/repository-reads.js";
-import { agentEndMark, openPlanStanding, TAB_KIND, tabLook } from "../tasks/tab-look.js";
+import { openPlanStanding, TAB_KIND, tabLook } from "../tasks/tab-look.js";
 import { markReadItem, type OpenTaskRename, useTaskRenameOffer } from "../tasks/task-menu-items.js";
 import { TaskKey } from "../tasks/task-standing.js";
 import { useOpenTerminal } from "../tasks/terminal-commands.js";
@@ -947,6 +955,7 @@ function agentRows(
   doors: PanelOfferDoors,
   show: (pick: () => void) => void,
   people: ReadonlyMap<string, HeldPeople>,
+  directory: EditReader,
 ): readonly PaletteRow[] {
   const taskId = tasks.activeTaskId;
   if (taskId === undefined) return [];
@@ -954,7 +963,7 @@ function agentRows(
   // Note that an item main says waits on the task holds its Inbox with no agent read yet.
   const waiting = inboxWaiting.find((each) => each.taskId === taskId)?.items.length ?? 0;
   const inbox = inboxEntries(tasks.agents, waiting, () => tasks.onShowInbox({ taskId }));
-  const agents = agentEntries(tasks.mainTabs, tasks.agents).map((entry) => ({
+  const agents = agentEntries(tasks.mainTabs, tasks.agents, directory).map((entry) => ({
     ...entry,
     onPick: () => tasks.onShowAgent(taskId, entry.row.id),
   }));
@@ -1026,7 +1035,7 @@ function agentRows(
       onChoose: () => show(onPick),
     };
   });
-  return [...standing, ...archivedAgentRows(tasks, taskName, show)];
+  return [...standing, ...archivedAgentRows(tasks, taskName, show, directory)];
 }
 
 /**
@@ -1040,6 +1049,7 @@ function archivedAgentRows(
   tasks: TasksControl,
   taskName: string | undefined,
   show: (pick: () => void) => void,
+  directory: EditReader,
 ): readonly PaletteRow[] {
   const { agents } = tasks;
   return (agents.archived ?? []).map((agent) => {
@@ -1053,7 +1063,7 @@ function archivedAgentRows(
       replayMasked: true,
       // Note that the task leads and Archived follows, as every agent menu says it (`agentMenuRow`).
       detail: [taskName, ARCHIVED_WORD].filter((word) => word !== undefined).join(" · "),
-      endMark: agentEndMark(agent, true),
+      endMark: agentSummaryEnd(agent, directory),
       card: (
         <AgentCard
           subject={agentSubject(agents, agent.id, NOTHING_HELD, false)}
@@ -1841,6 +1851,8 @@ export function CommandPalette({
   // The experiments on in the workspace the window lists, the account's own beside them.
   const experiments = useExperimentsIn(tasks.workspace?.id);
   const inboxWaiting = useInboxWaitingTasks();
+  // Note that the palette stands outside a task page, so it reads the open task's workspace's members itself, the reader among them, which a starter's face is told from.
+  const directory = useWorkspaceDirectory(tasks.workspace);
   if (open && !available) setOpen(false);
   const [filter, setFilter] = useState<PaletteFilter>(PALETTE_FILTER.ALL);
   // How many times ⌘K has opened the palette, each of which chooses its first row.
@@ -2116,7 +2128,7 @@ export function CommandPalette({
   // while open: every row a tier matches ranks above the next tier's.
   const tiersOf = {
     [PALETTE_FILTER.THIS_TASK]: () => [
-      agentRows(tasks, inboxWaiting, inboxStanding, offerDoors, onTasks, changesPeople),
+      agentRows(tasks, inboxWaiting, inboxStanding, offerDoors, onTasks, changesPeople, directory),
     ],
     [PALETTE_FILTER.PEOPLE]: () => [
       peopleRows(members, tasks.me, (userId) => onTasks(() => tasks.onOpenPerson(userId))),
